@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RustCraft Web Beta 0.1</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#111;color:#fff;font:15px/1.35 "Courier New",monospace;user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+.scr{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:repeating-conic-gradient(#4b3623 0 25%,#3e2d1d 0 50%) 0 0/48px 48px}
+.scr.on{display:flex}
+h1{margin:0 0 18px;font-size:54px;color:#e9e2d2;text-shadow:4px 4px #000}h1 small{display:block;text-align:right;font-size:15px;color:#ffd24a;text-shadow:2px 2px #000}h2{margin:0 0 6px;text-shadow:2px 2px #000}
+button,input,select{font:inherit;color:#fff;width:380px}
+button{padding:9px;background:#7c7c7c;border:2px solid;border-color:#c6c6c6 #444 #444 #c6c6c6;text-shadow:2px 2px #333;cursor:pointer}
+button:hover:not(:disabled){background:#6f86c8}button:disabled{background:#555;color:#999;cursor:default}
+input[type=text],select{padding:7px;background:#000;border:2px solid #999}
+label{width:380px;display:block;text-shadow:1px 1px #000}label input[type=range]{width:100%}label input[type=checkbox],label input[type=color]{width:auto;vertical-align:middle}
+.dim{color:#bbb;font-size:13px;max-width:380px;text-align:center}
+#hud{display:none;position:fixed;inset:0;pointer-events:none}
+#cross{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:28px;text-shadow:0 0 3px #000}
+#top{position:absolute;left:8px;top:8px;text-shadow:1px 1px #000;white-space:pre}#netb{position:absolute;right:8px;top:8px;text-shadow:1px 1px #000}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#888;margin-right:6px}
+.dot.online{background:#4c4}.dot.connecting{background:#fc3}.dot.error{background:#e44}.dot.ping{background:#58f}
+#chat{position:absolute;left:8px;bottom:72px;width:min(560px,90vw);max-height:40vh;overflow:hidden;text-shadow:1px 1px #000}
+#chat div{background:#0006;padding:1px 6px}#chat .old{display:none}#chat.open{overflow-y:auto}#chat.open .old{display:block}.sys{color:#ffd24a}
+#ci{display:none;position:absolute;left:8px;bottom:42px;width:min(560px,90vw);padding:5px;background:#000a;border:1px solid #aaa;pointer-events:auto}
+#bar{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);display:flex;gap:4px}
+#bar div{width:62px;height:28px;border:2px solid #333;background:#0008;text-align:center;font-size:12px;line-height:24px}#bar .s{border-color:#fff}
+.row{display:flex;gap:8px;width:380px}.row button{flex:1;width:auto}
+#egl{position:fixed;inset:0;z-index:100;background:#000}#egl iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+#eglBack{position:absolute;left:50%;top:0;transform:translateX(-50%);width:auto;padding:2px 12px;font-size:12px;opacity:.35;border-radius:0 0 6px 6px}#eglBack:hover{opacity:1}
+#bar{gap:0}#bar .slot{width:44px;height:44px;background-size:36px 36px;border:2px solid #333;background-color:#0008}#bar .slot.s{border-color:#fff}
+#held{position:absolute;left:50%;bottom:86px;transform:translateX(-50%);text-shadow:1px 1px #000;transition:opacity 1s;opacity:0;white-space:nowrap}
+#stat{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);text-shadow:1px 1px #000;display:none}
+#mineb{position:absolute;left:50%;top:54%;width:60px;height:5px;margin-left:-30px;background:#0008;display:none}#mineb i{display:block;height:100%;background:#fff}
+#inv{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:#0008}
+#panel{background:#c6c6c6;border:3px solid;border-color:#fff #555 #555 #fff;padding:10px;color:#404040;text-shadow:none}
+#ptitle{font-weight:bold;margin-bottom:6px}.lbl{display:block;margin-top:6px}.sp{height:8px}.col{display:flex;flex-direction:column;align-items:center;gap:4px}
+.grid{display:grid;gap:0;margin:2px 0;width:max-content}.flex{display:flex;align-items:center;gap:12px}
+.slot{position:relative;width:38px;height:38px;background:#8b8b8b center/32px 32px no-repeat;border:2px solid;border-color:#373737 #fff #fff #373737;image-rendering:pixelated}
+.slot:hover{background-color:#aaa}.slot.out{background-color:#7d7da0}
+.slot b{position:absolute;right:0;bottom:-3px;color:#fff;text-shadow:2px 2px #3f3f3f;font-size:13px}
+.slot i{position:absolute;left:3px;right:auto;bottom:1px;height:3px}
+.cbox{display:grid;grid-template-columns:repeat(9,38px);max-height:304px;overflow-y:auto;margin-top:6px}
+#csr{width:100%;padding:5px;background:#000;color:#fff;border:2px solid #555}
+#cur{position:fixed;left:-99px;top:-99px;width:32px;height:32px;pointer-events:none;z-index:60;background:center/32px 32px no-repeat;image-rendering:pixelated}
+#cur b{position:absolute;right:-2px;bottom:-4px;color:#fff;text-shadow:2px 2px #3f3f3f;font-size:13px}
+#tip{position:fixed;z-index:70;background:#100010ee;border:2px solid #25005b;color:#fff;padding:2px 6px;display:none;pointer-events:none;white-space:nowrap}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="menu" class="scr on"><h1>RustCraft Web<small>Beta 0.1</small></h1>
+<button id="bPlay">Play (Local World)</button><button id="bMp">Multiplayer</button><button id="bSet">Settings</button>
+<div id="wasm" class="dim"></div></div>
+<div id="mp" class="scr"><h2>Multiplayer</h2>
+<label>Username (3–16 letters, numbers, _)<input id="user" type="text" maxlength="16"></label>
+<label>Server address<input id="addr" type="text" placeholder="ws://localhost:8081"></label>
+<label>Protocol<select id="proto"><option value="eagler">Eaglercraft 1.8 – full game (real client)</option><option value="relay">RustCraft relay (chat only)</option></select></label>
+<button id="bSeal">Use SealCraft (wss://mc.sealcentral.co)</button>
+<div class="row"><button id="bConn">Connect</button><button id="bPing">Check status</button></div><div><span id="dot2" class="dot"></span><span id="st">Offline</span></div>
+<div class="dim">Eaglercraft opens the real EaglercraftX 1.8 client and joins with this username. The “← RustCraft” tab at the top brings you back.</div>
+<button class="back">Back</button></div>
+<div id="set" class="scr"><h2>Settings</h2>
+<label>Field of view: <b id="lsFov"></b><input id="sFov" type="range" min="30" max="200"></label>
+<label>Render distance: <b id="lsRd"></b><input id="sRd" type="range" min="2" max="64"></label>
+<label>Texture resolution: <b id="lsTex"></b><select id="sTex"><option>8</option><option>16</option><option>32</option></select></label>
+<label><input id="sCh" type="checkbox"> Highlight chests <input id="sCol" type="color"></label>
+<label>Game mode<select id="sGm"><option value="survival">Survival</option><option value="creative">Creative</option></select></label>
+<div class="dim">Saved automatically in this browser. FOV above 175° renders as 175° (rectilinear projection limit).</div>
+<button class="back">Done</button></div>
+<div id="hud"><div id="top"></div><div id="netb"><span id="dot" class="dot"></span><span id="stt">Offline</span></div><div id="cross">+</div>
+<div id="chat"></div><input id="ci" type="text" maxlength="100" placeholder="Chat — Enter to send, Esc to cancel"><div id="bar"></div><div id="held"></div><div id="stat"></div><div id="mineb"><i></i></div></div>
+<div id="inv"><div id="panel"><div id="ptitle"></div><div id="pbody"></div></div><div id="cur"></div><div id="tip"></div></div>
+<script>
+'use strict';
+const WASM_B64="";
+const $=i=>document.getElementById(i),KEY='rustcraft.web.settings.v1',H=48,cl=(v,a,b)=>Math.min(b,Math.max(a,v));
+const S={fov:70,rd:12,chest:true,color:'#ffd700',tex:8,user:'Steve',addr:'ws://localhost:8081',proto:'eagler'};
+try{Object.assign(S,JSON.parse(localStorage.getItem(KEY)||'{}'))}catch(e){}
+S.fov=cl(+S.fov||70,30,200);S.rd=cl(Math.round(+S.rd)||12,2,64);S.tex=[8,16,32].includes(+S.tex)?+S.tex:8;
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+let scr='menu',playing=false,started=false,chatOpen=false;
+const show=id=>{scr=id;document.querySelectorAll('.scr').forEach(e=>e.classList.toggle('on',e.id==id))};
+$('bMp').onclick=()=>show('mp');$('bSet').onclick=()=>show('set');
+document.querySelectorAll('.back').forEach(b=>b.onclick=()=>show('menu'));
+for(const id of['user','addr','proto']){const e=$(id);e.value=S[id];e.oninput=e.onchange=()=>{S[id]=e.value.trim();save()}}
+[['sFov','fov',v=>v+'°'],['sRd','rd',v=>v+' chunks'],['sTex','tex',v=>v+'×'+v]].forEach(([id,k,f])=>{const e=$(id),l=$('l'+id);e.value=S[k];l.textContent=f(S[k]);
+ e.oninput=()=>{S[k]=+e.value;l.textContent=f(S[k]);save();if(k=='tex')buildAtlas();if(k=='rd')wantRD()}});
+$('sCh').checked=S.chest;$('sCh').onchange=()=>{S.chest=$('sCh').checked;save()};
+$('sCol').value=S.color;$('sCol').oninput=()=>{S.color=$('sCol').value;save()};
+// ---- chat ----
+const chatEl=$('chat'),ci=$('ci');
+function say(t,c){const d=document.createElement('div');d.textContent=t;if(c)d.className=c;chatEl.appendChild(d);while(chatEl.children.length>60)chatEl.firstChild.remove();setTimeout(()=>d.classList.add('old'),10000);chatEl.scrollTop=1e9}
+function openChat(){chatOpen=true;for(const k in keys)keys[k]=false;chatEl.classList.add('open');ci.style.display='block';ci.value='';document.exitPointerLock();ci.focus()}
+function closeChat(){chatOpen=false;chatEl.classList.remove('open');ci.style.display='none';ci.blur();lock()}
+ci.onkeydown=e=>{e.stopPropagation();if(e.key=='Enter'){const t=ci.value.trim();if(t)sendChat(t);closeChat()}else if(e.key=='Escape')closeChat()};
+function sendChat(t){if(t[0]=='/')return cmd(t);if(net.st=='online'&&net.ws&&net.mode=='relay')net.ws.send(JSON.stringify({t:'chat',m:t}));else say('<'+(/^\w{3,16}$/.test(S.user)?S.user:'Steve')+'> '+t)}
+// ---- networking: transport + protocol adapters ----
+const net={ws:null,st:'offline',mode:'relay'};
+function setStatus(s,m){net.st=s;for(const[d,t]of[['dot','stt'],['dot2','st']]){$(d).className='dot '+s;$(t).textContent=m}$('bConn').textContent=(s=='online'||s=='connecting')?'Disconnect':'Connect'}
+function netClose(){const w=net.ws;net.ws=null;if(w)try{w.close()}catch(e){}}
+const ADAPT={
+ relay:{open(ws){ws.send(JSON.stringify({t:'join',u:S.user}))},
+  msg(d){let m;try{m=JSON.parse(d)}catch(e){return}
+   if(m.t=='ok'){setStatus('online','Connected to '+S.addr+' as '+S.user);say('Connected as '+S.user,'sys');startGame(false)}
+   else if(m.t=='chat')say('<'+m.u+'> '+m.m);else if(m.t=='sys')say(m.m,'sys');else if(m.t=='blk'&&[m.x,m.y,m.z,m.id].every(Number.isInteger)&&(m.id==0||BLK[m.id]))setBlock(m.x,m.y,m.z,m.id);
+   else if(m.t=='err'){setStatus('error',String(m.m));netClose()}}},
+ // Server status check (Eaglercraft "Accept: MOTD" query). Actually joining is done by the embedded real client, see launchEagler().
+ ping:{open(ws){setStatus('connecting','Connected. Asking the server for its status…');ws.send('Accept: MOTD');
+  setTimeout(()=>{if(net.ws===ws&&net.st=='connecting'){setStatus('error','Connected, but no status reply in 5 s (the server may reject this page\u2019s origin or expect a different handshake)');netClose()}},5000)},
+  msg(d){if(typeof d!='string')return;let m=null;try{m=JSON.parse(d)}catch(e){}
+   const q=(m&&m.data)||{},mo=Array.isArray(q.motd)?q.motd.join(' '):'',on=q.online!=null?q.online+'/'+q.max+' players':'';
+   setStatus('ping','Server reachable: '+(mo||d.slice(0,80))+(on?' \u2014 '+on:'')+'. Press Connect to join.');netClose()}}};
+function netConnect(mode){
+ const url=S.addr.trim();
+ if(!/^[A-Za-z0-9_]{3,16}$/.test(S.user))return setStatus('error','Username must be 3–16 letters, numbers or _');
+ if(!/^wss?:\/\/\S+$/i.test(url))return setStatus('error','Address must start with ws:// or wss://');
+ if(location.protocol=='https:'&&/^ws:/i.test(url))return setStatus('error','HTTPS pages can only use wss:// addresses');
+ if(mode=='eagler')return launchEagler(url);
+ netClose();let ws;try{ws=new WebSocket(url)}catch(e){return setStatus('error','Cannot open socket: '+e.message)}
+ ws.binaryType='arraybuffer';net.ws=ws;net.mode=mode;setStatus('connecting','Connecting to '+url+'…');
+ const to=setTimeout(()=>{if(ws.readyState!=1){setStatus('error','Timed out after 8 seconds');netClose()}},8000);
+ ws.onopen=()=>{clearTimeout(to);if(net.ws===ws)ADAPT[net.mode].open(ws)};
+ ws.onmessage=e=>{if(net.ws===ws)ADAPT[net.mode].msg(e.data)};
+ ws.onerror=()=>{clearTimeout(to);if(net.ws===ws)setStatus('error','Connection failed (server offline, wrong address, or TLS/origin rejected)')};
+ ws.onclose=e=>{clearTimeout(to);if(net.ws===ws){net.ws=null;if(net.st!='error')setStatus('offline','Disconnected (code '+e.code+')')}}}
+$('bSeal').onclick=()=>{S.addr='wss://mc.sealcentral.co';S.proto='eagler';$('addr').value=S.addr;$('proto').value='eagler';save()};
+$('bConn').onclick=()=>{if(egl.busy)return;if(net.ws){netClose();setStatus('offline','Disconnected')}else netConnect(S.proto=='eagler'?'eagler':'relay')};
+$('bPing').onclick=()=>{if(egl.busy)return;if(net.ws){netClose();setStatus('offline','Cancelled')}else netConnect('ping')};
+// ---- Eaglercraft multiplayer ----
+// The real EaglercraftX 1.8 client is embedded (gzip+base64) in <script id="eagler-gz"> (see embed_eaglercraft.py). Connect unpacks it into an iframe and starts it
+// with the server address as its own "joinServer" launch option, so the whole Eaglercraft login/handshake/game is handled by the client itself.
+const egl={on:false,busy:false,html:null,was:false,hud:'',NS:'_eaglercraftX',BACK:'← RustCraft'};
+const gzip=async(u8,pack)=>new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new(pack?CompressionStream:DecompressionStream)('gzip'))).arrayBuffer());
+const u8b64=u=>{let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(s)};
+async function eaglerSource(){const el=$('eagler-gz'),b=el?el.textContent.trim():'';
+ if(b){const r=await fetch('data:application/gzip;base64,'+b);return new TextDecoder().decode(await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer())}
+ const r=await fetch('eaglercraft1-8.html').catch(()=>null);if(!r||!r.ok)throw new Error('no Eaglercraft client is embedded in this page (run embed_eaglercraft.py)');return r.text()}
+// The client keeps the player profile as gzip'd NBT in localStorage "<ns>.p". Put the chosen username in it so the client neither auto-generates one nor asks.
+async function seedProfile(name){const te=new TextEncoder(),k=egl.NS+'.p',str=s=>{const u=te.encode(s);return[u.length>>8,u.length&255,...u]},tag=(t,n,...v)=>[t,...str(n),...v];
+ let cur=null,raw;try{cur=localStorage.getItem(k)}catch(e){return false}
+ if(cur){raw=await gzip(Uint8Array.from(atob(cur),c=>c.charCodeAt(0)),0);const kk=[8,...str('username')];let at=-1;
+  for(let i=0;i+kk.length+2<=raw.length&&at<0;i++){let j=0;while(j<kk.length&&raw[i+j]==kk[j])j++;if(j==kk.length)at=i}
+  if(at<0)return false;const p=at+kk.length,old=raw[p]<<8|raw[p+1];raw=Uint8Array.from([...raw.subarray(0,p),...str(name),...raw.subarray(p+2+old)])}
+ else raw=Uint8Array.from([10,0,0,...tag(9,'capes',0,0,0,0,0),...tag(3,'presetCape',0,0,0,0),...tag(3,'customCape',255,255,255,255),...tag(9,'skins',0,0,0,0,0),...tag(8,'username',...str(name)),...tag(3,'presetSkin',0,0,0,0),...tag(3,'customSkin',255,255,255,255),0]);
+ localStorage.setItem(k,u8b64(await gzip(raw,1)));return true}
+async function launchEagler(url){if(egl.busy)return;egl.busy=true;setStatus('connecting','Unpacking the Eaglercraft client… (a few seconds the first time)');
+ try{egl.html=egl.html||await eaglerSource();const h=egl.html,i=h.indexOf('<head>');if(i<0||i>4096)throw new Error('unrecognised Eaglercraft build');
+  try{await seedProfile(S.user)}catch(e){}
+  // Injected first thing in <head>: merges our launch options into the build's own window.eaglercraftXOpts and skips its 5 s "launching…" countdown.
+  const hook='<script>(function(){var O='+JSON.stringify({joinServer:url}).replace(/</g,'\\u003c')+',v;Object.defineProperty(window,"eaglercraftXOpts",{configurable:true,get:function(){return v},set:function(x){if(x&&typeof x=="object")Object.assign(x,O);Object.defineProperty(window,"eaglercraftXOpts",{value:x,writable:true,configurable:true})}});addEventListener("load",function(){setTimeout(function(){var b=document.getElementById("skipCountdown");if(b)b.click()},0)})})()<\/script>';
+  const w=document.createElement('div'),f=document.createElement('iframe'),bk=document.createElement('button');
+  w.id='egl';bk.id='eglBack';bk.textContent=egl.BACK;f.allow='autoplay; fullscreen; microphone; clipboard-read; clipboard-write';f.allowFullscreen=true;
+  bk.onclick=()=>{if(bk.textContent==egl.BACK){bk.textContent='Click again to leave';setTimeout(()=>{bk.textContent=egl.BACK},3000)}else leaveEagler()};
+  f.onload=()=>{try{f.contentWindow.focus()}catch(e){}};
+  f.srcdoc=h.slice(0,i+6)+hook+h.slice(i+6);w.append(f,bk);document.body.append(w);
+  egl.on=true;egl.was=playing;egl.hud=$('hud').style.display;playing=false;for(const k in keys)keys[k]=false;document.exitPointerLock();show(null);$('hud').style.display='none';
+  setStatus('online','Eaglercraft running — joining '+url)}
+ catch(e){setStatus('error','Could not start Eaglercraft: '+(e&&e.message||e))}
+ finally{egl.busy=false}}
+function leaveEagler(){const w=$('egl');if(w)w.remove();egl.on=false;playing=egl.was;$('hud').style.display=egl.hud;show('mp');setStatus('offline','Left Eaglercraft')}
+// ---- WebGL ----
+const cv=$('c'),gl=cv.getContext('webgl')||cv.getContext('experimental-webgl');
+if(!gl){$('wasm').textContent='WebGL is not available in this browser.';$('bPlay').disabled=true;throw new Error('no WebGL')}
+function prog(vs,fs){const p=gl.createProgram();for(const[t,s]of[[gl.VERTEX_SHADER,vs],[gl.FRAGMENT_SHADER,fs]]){const h=gl.createShader(t);gl.shaderSource(h,s);gl.compileShader(h);if(!gl.getShaderParameter(h,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(h));gl.attachShader(p,h)}
+ ['p','u','s'].forEach((n,i)=>gl.bindAttribLocation(p,i,n));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p}
+const P1=prog('attribute vec3 p;attribute vec2 u;attribute float s;uniform mat4 m;varying vec2 vu;varying float vs,vd;void main(){gl_Position=m*vec4(p,1.);vu=u;vs=s;vd=gl_Position.w;}',
+ 'precision mediump float;uniform sampler2D t;uniform float fd;varying vec2 vu;varying float vs,vd;void main(){vec4 c=texture2D(t,vu);if(c.a<.5)discard;gl_FragColor=vec4(mix(c.rgb*vs,vec3(.55,.75,.95),clamp((vd-fd*.6)/(fd*.4),0.,1.)),1.);}');
+const P2=prog('attribute vec3 p;uniform mat4 m;void main(){gl_Position=m*vec4(p,1.);}','precision mediump float;uniform vec4 c;void main(){gl_FragColor=c;}');
+const U1={m:gl.getUniformLocation(P1,'m'),fd:gl.getUniformLocation(P1,'fd')},U2={m:gl.getUniformLocation(P2,'m'),c:gl.getUniformLocation(P2,'c')};
+const mul=(a,b)=>{const o=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s}return o};
+const rotX=a=>{const c=Math.cos(a),s=Math.sin(a);return[1,0,0,0,0,c,s,0,0,-s,c,0,0,0,0,1]},rotY=a=>{const c=Math.cos(a),s=Math.sin(a);return[c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1]},tr=(x,y,z)=>[1,0,0,0,0,1,0,0,0,0,1,0,x,y,z,1];
+const persp=(fv,a,n,f)=>{const q=1/Math.tan(fv/2);return[q/a,0,0,0,0,q,0,0,0,0,(f+n)/(n-f),-1,0,0,2*f*n/(n-f),0]};
+// ---- textures (procedural, S.tex x S.tex per tile) ----
+const hash=(x,z)=>{let h=Math.imul(x,374761393)+Math.imul(z,668265263)|0;h=Math.imul(h^(h>>>13),1274126177);return(h^(h>>>16))>>>0};
+const atlas=gl.createTexture(),ATW=128,ICT=gl.createTexture(),IUC=new Map(),ICX={};let ATC=null,ICS=null,ICW=1,ICH=1,READY=false;
+// ---- registry: blocks are ids 1-255 (MC 1.8 id in .mc), items are ids 256+ ----
+const BLK={},ITM={},NAME={},OPQ=[],cap=s=>s[0].toUpperCase()+s.slice(1);let NEXT=256;
+// [id,name,label,rgb,pattern,hardness,tool,minTier,drops(null=self),mc1.8 id]
+[[1,'grass','Grass Block',[134,96,67],'G',.6,'shovel',0,[['dirt']],2],
+[2,'dirt','Dirt',[134,96,67],'n',.5,'shovel',0,0,3],
+[3,'stone','Stone',[125,125,125],'n',1.5,'pick',1,[['cobblestone']],1],
+[4,'sand','Sand',[219,207,142],'n',.5,'shovel',0,0,12],
+[5,'chest','Chest',[150,100,40],'c',2.5,'axe',0,0,54],
+[6,'planks','Oak Planks',[160,130,80],'p',2,'axe',0,0,5],
+[7,'cobblestone','Cobblestone',[110,110,110],'k',2,'pick',1,0,4],
+[8,'log','Oak Log',[102,81,50],'l',2,'axe',0,0,17],
+[9,'leaves','Oak Leaves',[58,128,40],'f',.2,'',0,[['sapling',1,1,.05],['apple',1,1,.005]],18],
+[10,'bedrock','Bedrock',[50,50,50],'n',-1,'',0,0,7],
+[11,'gravel','Gravel',[136,126,126],'n',.6,'shovel',0,0,13],
+[12,'coal_ore','Coal Ore',[30,30,30],'o',3,'pick',1,[['coal']],16],
+[13,'iron_ore','Iron Ore',[216,175,147],'o',3,'pick',2,0,15],
+[14,'gold_ore','Gold Ore',[252,238,75],'o',3,'pick',3,0,14],
+[15,'diamond_ore','Diamond Ore',[92,219,213],'o',3,'pick',3,[['diamond']],56],
+[16,'redstone_ore','Redstone Ore',[210,0,0],'o',3,'pick',3,[['redstone',4,5]],73],
+[17,'lapis_ore','Lapis Ore',[30,70,170],'o',3,'pick',2,[['lapis',4,8]],21],
+[18,'emerald_ore','Emerald Ore',[23,221,98],'o',3,'pick',3,[['emerald']],129],
+[19,'crafting_table','Crafting Table',[160,130,80],'t',2.5,'axe',0,0,58],
+[20,'furnace','Furnace',[125,125,125],'u',3.5,'pick',1,0,61],
+[21,'glass','Glass',[210,235,245],'g',.3,'',0,[],20],
+[22,'bricks','Bricks',[150,75,60],'b',2,'pick',1,0,45],
+[23,'sandstone','Sandstone',[216,203,142],'n',.8,'pick',1,0,24],
+[24,'obsidian','Obsidian',[20,18,30],'n',50,'pick',4,0,49],
+[25,'bookshelf','Bookshelf',[160,130,80],'B',1.5,'axe',0,[],47],
+[26,'tnt','TNT',[200,40,30],'T',0,'',0,0,46],
+[27,'wool','White Wool',[235,235,235],'w',.8,'',0,0,35],
+[28,'coal_block','Block of Coal',[25,25,25],'m',5,'pick',1,0,173],
+[29,'iron_block','Block of Iron',[220,220,220],'m',5,'pick',2,0,42],
+[30,'gold_block','Block of Gold',[250,215,60],'m',3,'pick',3,0,41],
+[31,'diamond_block','Block of Diamond',[100,230,230],'m',5,'pick',3,0,57],
+[32,'emerald_block','Block of Emerald',[50,200,90],'m',5,'pick',3,0,133],
+[33,'lapis_block','Lapis Lazuli Block',[30,70,160],'m',3,'pick',2,0,22],
+[34,'redstone_block','Block of Redstone',[180,20,20],'m',5,'pick',1,0,152],
+[35,'stone_bricks','Stone Bricks',[122,122,122],'s',1.5,'pick',1,0,98],
+[36,'clay','Clay',[160,165,180],'n',.6,'shovel',0,[['clay_ball',4,4]],82],
+[37,'glowstone','Glowstone',[250,210,120],'z',.3,'',0,0,89],
+[38,'netherrack','Netherrack',[110,50,50],'n',.4,'pick',1,0,87],
+[39,'soul_sand','Soul Sand',[80,60,50],'n',.5,'shovel',0,0,88],
+[40,'ice','Ice',[150,190,250],'i',.5,'pick',1,[],79],
+[41,'snow','Snow Block',[245,250,250],'n',.2,'shovel',1,[['snowball',4,4]],80],
+[42,'pumpkin','Pumpkin',[210,125,25],'v',1,'axe',0,0,86],
+[43,'melon','Melon',[110,160,40],'v',1,'axe',0,[['melon_slice',3,7]],103],
+[44,'hay_block','Hay Bale',[200,170,40],'v',.5,'',0,0,170],
+[45,'mossy_cobblestone','Moss Stone',[90,115,90],'k',2,'pick',1,0,48],
+[46,'sponge','Sponge',[200,200,70],'n',.6,'',0,0,19],
+[47,'end_stone','End Stone',[220,220,160],'n',3,'pick',1,0,121]
+].forEach(([id,name,label,c,pat,h,tool,tier,drop,mc])=>{BLK[id]={id,name,label,c,pat,h,tool,tier,drop,mc};NAME[name]=id;OPQ[id]=1});
+OPQ[9]=OPQ[21]=OPQ[40]=0;
+const ALLB=Object.keys(BLK).map(Number);
+const item=(name,label,ic,c,o)=>{const id=NEXT++;ITM[id]=Object.assign({id,name,label,ic,c,max:64},o);NAME[name]=id;return id};
+item('stick','Stick','stick',[160,120,60]);item('coal','Coal','lump',[35,35,35]);item('charcoal','Charcoal','lump',[70,55,45]);
+item('iron_ingot','Iron Ingot','ingot',[215,215,215]);item('gold_ingot','Gold Ingot','ingot',[250,220,60]);
+item('diamond','Diamond','gem',[90,230,230]);item('emerald','Emerald','gem',[40,200,90]);
+item('redstone','Redstone','dust',[200,30,30]);item('lapis','Lapis Lazuli','dust',[40,70,200]);
+item('flint','Flint','tri',[80,80,80]);item('string','String','zig',[235,235,235]);item('feather','Feather','feather',[240,240,240]);
+item('leather','Leather','rect',[160,90,40]);item('paper','Paper','rect',[240,240,235]);item('book','Book','book',[140,90,40]);
+item('clay_ball','Clay','round',[160,165,180]);item('brick','Brick','ingot',[170,70,50]);item('gunpowder','Gunpowder','dust',[110,110,110]);
+item('bone','Bone','bone',[235,235,225]);item('slimeball','Slimeball','round',[110,190,90]);item('snowball','Snowball','round',[245,250,250],{max:16});
+item('blaze_rod','Blaze Rod','stick',[240,170,30]);item('ender_pearl','Ender Pearl','round',[30,120,100],{max:16});item('sugar','Sugar','dust',[250,250,250]);
+item('sapling','Oak Sapling','leaf',[60,140,50]);item('wheat_seeds','Seeds','dust',[110,160,60]);item('wheat','Wheat','dust',[200,180,60]);
+item('bowl','Bowl','bucket',[130,95,55]);item('bucket','Bucket','bucket',[200,200,200],{max:16});item('torch','Torch (item only)','torch',[250,200,60]);
+item('apple','Apple','food',[210,40,40],{food:4});item('bread','Bread','food',[200,150,70],{food:5});item('cookie','Cookie','food',[190,130,60],{food:2});
+item('carrot','Carrot','food',[240,130,30],{food:3});item('potato','Potato','food',[200,170,100],{food:1});item('baked_potato','Baked Potato','food',[220,170,80],{food:5});
+item('melon_slice','Melon Slice','food',[220,60,60],{food:2});item('raw_beef','Raw Beef','food',[190,60,60],{food:3});item('steak','Steak','food',[120,60,30],{food:8});
+item('raw_porkchop','Raw Porkchop','food',[230,140,140],{food:3});item('cooked_porkchop','Cooked Porkchop','food',[190,120,80],{food:8});
+item('raw_chicken','Raw Chicken','food',[240,200,190],{food:2});item('cooked_chicken','Cooked Chicken','food',[210,150,80],{food:6});
+item('raw_fish','Raw Fish','food',[120,160,190],{food:2});item('cooked_fish','Cooked Fish','food',[200,140,100],{food:5});
+item('golden_apple','Golden Apple','food',[250,215,60],{food:4});item('rotten_flesh','Rotten Flesh','food',[130,100,60],{food:4});
+{const TIERS={wooden:[1,59,2,[160,130,80]],stone:[2,131,4,[125,125,125]],iron:[3,250,6,[215,215,215]],golden:[1,32,12,[250,220,60]],diamond:[4,1561,8,[90,230,230]]};
+ for(const m in TIERS){const[tier,dur,spd,col]=TIERS[m];for(const[t,tn,ic]of[['pick','Pickaxe','pick'],['axe','Axe','axe'],['shovel','Shovel','shovel'],['sword','Sword','sword'],['hoe','Hoe','hoe']])item(m+'_'+tn.toLowerCase(),cap(m)+' '+tn,ic,col,{max:1,tool:t,tier,dur,spd})}
+ const ARM={leather:[[55,80,75,65],[160,90,40]],iron:[[165,240,225,195],[215,215,215]],golden:[[77,112,105,91],[250,220,60]],diamond:[[363,528,495,429],[90,230,230]]};
+ for(const m in ARM)[['helmet','Helmet','helm'],['chestplate','Chestplate','chestp'],['leggings','Leggings','legs'],['boots','Boots','boots']].forEach(([n,l,ic],i)=>item(m+'_'+n,cap(m)+' '+l,ic,ARM[m][1],{max:1,arm:i,dur:ARM[m][0][i]}))}
+item('bow','Bow','bow',[160,120,60],{max:1,dur:385});item('arrow','Arrow','arrow',[150,150,150]);item('fishing_rod','Fishing Rod','rod',[160,120,60],{max:1,dur:65});
+item('flint_and_steel','Flint and Steel','fs',[150,150,150],{max:1,dur:65});item('shears','Shears','shears',[215,215,215],{max:1,dur:238});
+item('compass','Compass','compass',[215,215,215]);item('clock','Clock','compass',[250,220,60]);
+const ALLI=Object.keys(ITM).map(Number),ALL=[...ALLB,...ALLI];
+// ---- crafting recipes (shaped recipes also match mirrored) ----
+const REC=[],shaped=(rows,map,out,n=1)=>REC.push({w:rows[0].length,h:rows.length,g:rows.join('').split('').map(ch=>ch==' '?0:NAME[map[ch]]),out:NAME[out],n}),shapeless=(l,out,n=1)=>REC.push({l:l.map(x=>NAME[x]),out:NAME[out],n});
+shapeless(['log'],'planks',4);shaped(['P','P'],{P:'planks'},'stick',4);shaped(['PP','PP'],{P:'planks'},'crafting_table');
+shaped(['PPP','P P','PPP'],{P:'planks'},'chest');shaped(['CCC','C C','CCC'],{C:'cobblestone'},'furnace');shaped(['P P',' P '],{P:'planks'},'bowl',4);
+shaped(['I I',' I '],{I:'iron_ingot'},'bucket');shaped(['C','S'],{C:'coal',S:'stick'},'torch',4);shaped(['C','S'],{C:'charcoal',S:'stick'},'torch',4);
+shaped(['SS','SS'],{S:'sand'},'sandstone');shaped(['BB','BB'],{B:'brick'},'bricks');shaped(['CC','CC'],{C:'clay_ball'},'clay');
+shaped(['SS','SS'],{S:'stone'},'stone_bricks',4);shaped(['SS','SS'],{S:'snowball'},'snow');shaped(['GSG','SGS','GSG'],{G:'gunpowder',S:'sand'},'tnt');
+shaped(['WWW'],{W:'wheat'},'bread');shaped(['GGG','GAG','GGG'],{G:'gold_ingot',A:'apple'},'golden_apple');
+shaped([' I','I '],{I:'iron_ingot'},'shears');shapeless(['iron_ingot','flint'],'flint_and_steel');
+shaped([' SX','S X',' SX'],{S:'stick',X:'string'},'bow');shaped(['F','S','E'],{F:'flint',S:'stick',E:'feather'},'arrow',4);
+shaped(['  S',' SX','S X'],{S:'stick',X:'string'},'fishing_rod');shaped([' I ','IRI',' I '],{I:'iron_ingot',R:'redstone'},'compass');
+shaped([' G ','GRG',' G '],{G:'gold_ingot',R:'redstone'},'clock');
+for(const[b,i]of[['coal_block','coal'],['iron_block','iron_ingot'],['gold_block','gold_ingot'],['diamond_block','diamond'],['emerald_block','emerald'],['redstone_block','redstone'],['lapis_block','lapis']]){shaped(['XXX','XXX','XXX'],{X:i},b);shapeless([b],i,9)}
+for(const[m,x]of[['wooden','planks'],['stone','cobblestone'],['iron','iron_ingot'],['golden','gold_ingot'],['diamond','diamond']]){const o={X:x,S:'stick'};
+ shaped(['XXX',' S ',' S '],o,m+'_pickaxe');shaped(['XX','XS',' S'],o,m+'_axe');shaped(['X','S','S'],o,m+'_shovel');shaped(['X','X','S'],o,m+'_sword');shaped(['XX',' S',' S'],o,m+'_hoe')}
+for(const[m,x]of[['leather','leather'],['iron','iron_ingot'],['golden','gold_ingot'],['diamond','diamond']]){const o={X:x};
+ shaped(['XXX','X X'],o,m+'_helmet');shaped(['X X','XXX','XXX'],o,m+'_chestplate');shaped(['XXX','X X','X X'],o,m+'_leggings');shaped(['X X','X X'],o,m+'_boots')}
+REC.forEach(r=>{if(!r.out||(r.g&&r.g.some(v=>v===undefined))||(r.l&&r.l.some(v=>!v)))console.warn('bad recipe',r)});
+function matchRecipe(g,gw){const gh=g.length/gw;let x0=99,x1=-1,y0=99,y1=-1;
+ for(let y=0;y<gh;y++)for(let x=0;x<gw;x++)if(g[y*gw+x]){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}
+ if(x1<0)return null;const w=x1-x0+1,h=y1-y0+1,ids=g.filter(Boolean).map(s=>s.id).sort();
+ for(const r of REC){if(r.l){if(r.l.length==ids.length&&[...r.l].sort().every((v,i)=>v==ids[i]))return r;continue}
+  if(r.w!=w||r.h!=h)continue;for(const mir of[0,1]){let ok=true;for(let y=0;y<h&&ok;y++)for(let x=0;x<w;x++){const s=g[(y0+y)*gw+x0+(mir?w-1-x:x)];if((s?s.id:0)!=r.g[y*w+x]){ok=false;break}}if(ok)return r}}
+ return null}
+// ---- textures ----
+const TB={1:[0,2],8:[100,100],19:[101,6],20:[102,102],23:[4,4]},ftile=(id,f)=>{const o=TB[id];return o?(f==2?o[0]:f==3?o[1]:id):id};
+function texel(d,px,py,T,t){const u=px/T,v=py/T,n=(hash(px*7+t*131,py*13+t)&31)-16,c=d.c,E=px==0||py==0||px==T-1||py==T-1;let C=c,a=255,k=n;
+ switch(d.pat){
+ case'G':if(v<.25)C=[84,150,60];break;
+ case'o':if(hash((px>>1)*5+t*17,(py>>1)*3+t*29)%100<30)k=n>>1;else C=[125,125,125];break;
+ case'p':if(v*4%1<.12)C=[110,85,50];break;
+ case'k':if((hash(px>>1,(py>>1)+t)&3)==0)C=c.map(x=>x*.7);if(v*3%1<.1)C=c.map(x=>x*.55);break;
+ case'q':if(u*3%1<.1||v*3%1<.1)C=[100,70,40];break;
+ case't':if(u>.15&&u<.85&&v>.35&&v<.6)C=[90,60,30];else if(v*4%1<.1)C=[120,95,55];break;
+ case'u':C=(u>.25&&u<.75&&v>.35&&v<.8)?[45,45,45]:[125,125,125];break;
+ case'g':a=(E||(Math.abs(u-v)<.1&&u<.5))?255:0;k=0;break;
+ case'f':a=(hash(px+t*3,py*5)&3)?255:0;break;
+ case'b':if(v*4%1<.15||((u*2+(((v*4)|0)&1?.5:0))%1<.12))C=[190,185,175];break;
+ case's':if(v*2%1<.1||u*2%1<.1)C=c.map(x=>x*.7);break;
+ case'c':C=(u>.42&&u<.58&&v>.35&&v<.6)?[220,220,220]:(v>.4&&v<.5)?[70,40,15]:[150,100,40];break;
+ case'r':C=(((Math.max(Math.abs(u-.5),Math.abs(v-.5))*5)|0)&1)?c:c.map(x=>x*1.25);break;
+ case'l':if(px%3==0)C=c.map(x=>x*.78);break;
+ case'm':k=E?-30:n>>2;break;
+ case'B':if(v<.2||v>.8)C=[160,130,80];else C=[[170,40,40],[40,90,160],[40,130,60],[200,170,50]][hash(px>>1,t)&3];break;
+ case'T':if(v>.4&&v<.6)C=[225,225,225];break;
+ case'v':if((px>>1)&1)C=c.map(x=>x*.82);break;
+ case'w':case'i':k=n>>2;break;
+ case'z':k=(hash(px*3+t,py*5)&63)-32;break}
+ return[C[0]+k,C[1]+k,C[2]+k,a]}
+function buildAtlas(){const T=S.tex,c=document.createElement('canvas');c.width=T*ATW;c.height=T;const x=c.getContext('2d'),im=x.createImageData(c.width,T),TL={0:{c:[84,150,60],pat:'n'},100:{c:[102,81,50],pat:'r'},101:{c:[160,130,80],pat:'q'},102:{c:[110,110,110],pat:'k'}};
+ for(const id in BLK)TL[id]={c:BLK[id].c,pat:BLK[id].pat};
+ for(const t in TL)for(let py=0;py<T;py++)for(let px=0;px<T;px++){const p=texel(TL[t],px,py,T,+t),i=(py*c.width+t*T+px)*4;im.data[i]=p[0];im.data[i+1]=p[1];im.data[i+2]=p[2];im.data[i+3]=p[3]}
+ x.putImageData(im,0,0);ATC=c;gl.bindTexture(gl.TEXTURE_2D,atlas);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
+ for(const[k,v]of[[gl.TEXTURE_MIN_FILTER,gl.NEAREST],[gl.TEXTURE_MAG_FILTER,gl.NEAREST],[gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]])gl.texParameteri(gl.TEXTURE_2D,k,v);
+ buildIcons();IUC.clear();if(READY)refresh()}
+// ---- icons (isometric block cubes, pixel-art items) shared by the hotbar, inventory UI and dropped items ----
+function blockIcon(g,id,T){const dr=(m,t,sh)=>{g.save();g.transform(...m);g.drawImage(ATC,t*T,0,T,T,0,0,T,T);if(sh){g.fillStyle='rgba(0,0,0,'+sh+')';g.fillRect(0,0,T,T)}g.restore()};
+ dr([14/T,7/T,-14/T,7/T,16,2],ftile(id,2),0);dr([14/T,7/T,0,14/T,2,9],ftile(id,0),.25);dr([14/T,-7/T,0,14/T,16,16],ftile(id,0),.45)}
+function itemIcon(g,d){const P=(x,y,c)=>{g.fillStyle=c;g.fillRect(x*2,y*2,2,2)},C=d.c,cs='rgb('+C+')',dk='rgb('+C.map(v=>v*.65|0)+')',lt='rgb('+C.map(v=>Math.min(255,v*1.3|0))+')',W='#7a5a2e',
+ pts=(l,c)=>{for(let i=0;i<l.length;i+=2)P(l[i],l[i+1],c)},rect=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x,y,w,h)},stick=c=>{for(let i=0;i<10;i++)P(3+i,13-i,c||W)},blob=(cx,cy,r,c)=>{for(let y=-r;y<=r;y++)for(let x=-r;x<=r;x++)if(x*x+y*y<=r*r+1)P(cx+x,cy+y,c)};
+ switch(d.ic){
+ case'pick':stick();pts([5,3,6,2,7,2,8,2,9,2,10,3,11,4,12,5,13,6,13,7,6,3,7,3,8,3,9,3,10,4,11,5,12,6],cs);pts([5,4,13,8,12,7],dk);break;
+ case'axe':stick();pts([8,2,9,2,10,3,8,3,9,3,10,4,11,4,8,4,9,4,10,5,11,5,9,5,10,6,9,6],cs);pts([7,3,7,4,8,5],dk);break;
+ case'shovel':stick();pts([12,1,13,2,12,2,11,2,10,3,11,3,12,3,13,3,11,4,12,4,10,4,13,4,12,5,11,5],cs);break;
+ case'sword':for(let i=0;i<9;i++){P(5+i,11-i,cs);P(4+i,11-i,lt)}pts([4,9,5,10,6,11,7,12,3,10,6,9,7,10,8,11],'#5a3a1a');pts([3,12,2,13,4,13],W);break;
+ case'hoe':stick();pts([9,3,10,3,11,3,12,3,12,4,12,5],cs);break;
+ case'helm':rect(8,8,16,8,cs);rect(8,16,5,8,cs);rect(19,16,5,8,cs);rect(8,8,16,2,lt);break;
+ case'chestp':rect(7,6,18,22,cs);rect(3,6,6,12,cs);rect(23,6,6,12,cs);g.clearRect(12,6,8,5);rect(7,22,18,3,dk);break;
+ case'legs':rect(7,6,18,7,cs);rect(7,13,8,15,cs);rect(17,13,8,15,cs);rect(7,6,18,2,lt);break;
+ case'boots':rect(6,10,9,13,cs);rect(17,10,9,13,cs);rect(3,22,12,6,dk);rect(17,22,12,6,dk);break;
+ case'ingot':for(let y=0;y<5;y++)for(let x=0;x<7;x++)P(4+x+(4-y),6+y,y==0?lt:y==4?dk:cs);break;
+ case'gem':for(let y=-4;y<=4;y++)for(let x=-(4-Math.abs(y));x<=4-Math.abs(y);x++)P(8+x,8+y,y<0?lt:x<0?cs:dk);break;
+ case'dust':pts([5,10,8,9,10,11,7,12,11,8,6,7,9,6,12,11,7,10,10,8,5,12,8,11],cs);pts([6,9,9,8,10,10,8,12],lt);break;
+ case'lump':blob(8,8,4,cs);pts([6,6,9,10,7,9],lt);pts([10,6,6,10],dk);break;
+ case'round':blob(8,8,4,cs);pts([6,6,7,6,6,7],lt);break;
+ case'stick':stick(cs);break;
+ case'rect':rect(8,6,16,20,cs);rect(8,6,16,2,lt);rect(8,24,16,2,dk);break;
+ case'book':rect(8,5,16,22,'#7a4a1a');rect(10,7,12,18,cs);rect(10,7,2,18,dk);break;
+ case'bucket':rect(8,10,16,14,cs);rect(10,24,12,2,dk);rect(8,8,16,2,lt);break;
+ case'bow':for(let i=0;i<10;i++){P(9+Math.round(Math.sin(i/9*Math.PI)*3),2+i,W);P(8,2+i,'#ddd')}break;
+ case'arrow':for(let i=0;i<10;i++)P(3+i,13-i,W);pts([13,3,12,2,13,2,14,3],'#999');pts([3,13,2,13,3,12,4,13],'#eee');break;
+ case'rod':stick();for(let i=0;i<6;i++)P(12,4+i,'#ddd');break;
+ case'shears':for(let i=0;i<8;i++){P(4+i,12-i,cs);P(4+i,4+i,dk)}pts([3,13,3,3],W);break;
+ case'tri':for(let y=0;y<6;y++)for(let x=-y;x<=y;x++)P(8+x,4+y,cs);break;
+ case'bone':for(let i=0;i<8;i++)P(4+i,11-i,cs);pts([3,10,4,11,3,12,11,3,12,4,13,3],cs);break;
+ case'leaf':pts([8,13,8,12,8,11,8,10],'#5a3a1a');pts([6,8,7,8,8,8,9,8,10,8,7,7,8,7,9,7,8,6,7,9,9,9],cs);break;
+ case'food':blob(8,9,4,cs);pts([6,7,7,7],lt);P(8,4,W);P(9,3,'#3a8a2a');break;
+ case'torch':for(let i=0;i<8;i++)P(8,6+i,W);pts([8,3,8,4,7,4,9,4,8,5],cs);P(8,3,'#fff');break;
+ case'zig':for(let i=0;i<10;i++)P(3+i,3+i+(i&1),cs);break;
+ case'feather':for(let i=0;i<9;i++)P(4+i,12-i,cs);pts([5,12,6,11,5,11,10,6,11,5],lt);break;
+ case'compass':blob(8,8,5,cs);blob(8,8,3,'#222');pts([8,6,8,7],'#e33');break;
+ case'fs':rect(8,16,12,8,'#777');rect(16,8,8,12,'#444');break;
+ default:blob(8,8,4,cs)}}
+function buildIcons(){const ids=ALL,cols=32,c=document.createElement('canvas');c.width=cols*32;c.height=Math.ceil(ids.length/cols)*32;const g=c.getContext('2d');g.imageSmoothingEnabled=false;
+ ids.forEach((id,i)=>{ICX[id]=i;g.save();g.translate((i%cols)*32,((i/cols)|0)*32);g.beginPath();g.rect(0,0,32,32);g.clip();if(id<256)blockIcon(g,id,S.tex);else itemIcon(g,ITM[id]);g.restore()});
+ ICS=c;ICW=c.width;ICH=c.height;gl.bindTexture(gl.TEXTURE_2D,ICT);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
+ for(const[k,v]of[[gl.TEXTURE_MIN_FILTER,gl.NEAREST],[gl.TEXTURE_MAG_FILTER,gl.NEAREST],[gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]])gl.texParameteri(gl.TEXTURE_2D,k,v);gl.bindTexture(gl.TEXTURE_2D,atlas)}
+function iconURL(id){let u=IUC.get(id);if(!u){const i=ICX[id],c=document.createElement('canvas');c.width=c.height=32;c.getContext('2d').drawImage(ICS,(i%32)*32,((i/32)|0)*32,32,32,0,0,32,32);u=c.toDataURL();IUC.set(id,u)}return u}
+buildAtlas();
+// ---- world (terrain: Rust/WASM core if loaded, identical JS fallback otherwise) ----
+let wasm=null;
+const vn=(x,z)=>{const ix=Math.floor(x),iz=Math.floor(z),fx=x-ix,fz=z-iz,sx=fx*fx*(3-2*fx),sz=fz*fz*(3-2*fz),r=(a,b)=>hash(a,b)/4294967296,a=r(ix,iz),b=r(ix+1,iz),c=r(ix,iz+1),d=r(ix+1,iz+1);return a+(b-a)*sx+(c-a)*sz+(a-b-c+d)*sx*sz};
+const SX=Math.random()*1e5|0,SZ=Math.random()*1e5|0;
+const height=(x,z)=>{const a=wasm?0:SX,b=wasm?0:SZ;return Math.floor(14+(vn(x/28+a,z/28+b)*.7+vn(x/9+a*3.17,z/9+b*3.17)*.3)*20)};
+const gen=(x,y,z,h)=>y>h?(y==h+1&&h>14&&hash(x+99,z-77)%250==0?5:0):y==h?(h<=14?4:1):y>=h-3?(h<=14?4:2):3;
+(async()=>{try{const b=WASM_B64?Uint8Array.from(atob(WASM_B64),c=>c.charCodeAt(0)):await(await fetch('rustcraft_core.wasm')).arrayBuffer();
+ const w=(await WebAssembly.instantiate(b,{})).instance.exports;if(w.rc_version()!=1)throw 0;wasm=w}catch(e){}
+ $('wasm').textContent='Terrain generator: '+(wasm?'Rust/WebAssembly':'JavaScript fallback (build with build.sh to embed the Rust core)')})();
+const chunks=new Map(),ed=new Map(),key=(x,z)=>(x+32768)*65536+z+32768;
+function getBlock(x,y,z){if(y<0)return 3;if(y>=H)return 0;const c=chunks.get(key(x>>4,z>>4));return c?c.b[((x&15)*16+(z&15))*H+y]:gen(x,y,z,height(x,z))}
+function mk(cx,cz){let b;if(wasm)b=new Uint8Array(wasm.memory.buffer,wasm.rc_fill(cx,cz),16*16*H).slice();
+ else{b=new Uint8Array(16*16*H);for(let x=0;x<16;x++)for(let z=0;z<16;z++){const wx=cx*16+x,wz=cz*16+z,h=height(wx,wz);for(let y=0;y<H;y++)b[(x*16+z)*H+y]=gen(wx,y,wz,h)}}
+ decorate(b,cx,cz);const e=ed.get(key(cx,cz));if(e)for(const[i,id]of e)b[i]=id;return{cx,cz,b,buf:null,n:0,dirty:true,ch:[]}}
+function setBlock(x,y,z,id){if(y<1||y>=H)return;const cx=x>>4,cz=z>>4,c=chunks.get(key(cx,cz));if(!c)return;const lx=x&15,lz=z&15,i=(lx*16+lz)*H+y;c.b[i]=id;
+ let e=ed.get(key(cx,cz));if(!e)ed.set(key(cx,cz),e=new Map());e.set(i,id);c.dirty=true;
+ for(const[dx,dz]of[[1,0],[-1,0],[0,1],[0,-1]])if((lx==0&&dx<0)||(lx==15&&dx>0)||(lz==0&&dz<0)||(lz==15&&dz>0)){const n=chunks.get(key(cx+dx,cz+dz));if(n)n.dirty=true}}
+const F=[[1,0,0,[1,0,0,1,1,0,1,1,1,1,0,1],.8],[-1,0,0,[0,0,1,0,1,1,0,1,0,0,0,0],.8],[0,1,0,[0,1,0,0,1,1,1,1,1,1,1,0],1],[0,-1,0,[0,0,1,0,0,0,1,0,0,1,0,1],.5],[0,0,1,[1,0,1,1,1,1,0,1,1,0,0,1],.65],[0,0,-1,[0,0,0,0,1,0,1,1,0,1,0,0],.65]];
+const Q=[0,1,2,0,2,3],UV=[0,1,0,0,1,0,1,1],CUBE=[];for(const f of F)for(const k of Q)for(let j=0;j<3;j++)CUBE.push(f[3][k*3+j]*1.01-.005);
+function mesh(c){const v=[],ox=c.cx*16,oz=c.cz*16;c.ch=[];
+ for(let x=0;x<16;x++)for(let z=0;z<16;z++)for(let y=0;y<H;y++){const id=c.b[(x*16+z)*H+y];if(!id)continue;const wx=ox+x,wz=oz+z;if(id==5)c.ch.push(wx,y,wz);
+  for(let f=0;f<6;f++){const a=F[f],nb=getBlock(wx+a[0],y+a[1],wz+a[2]);if(nb&&(OPQ[nb]||nb==id))continue;const t=ftile(id,f);
+   for(const k of Q)v.push(wx+a[3][k*3],y+a[3][k*3+1],wz+a[3][k*3+2],(t+(UV[k*2]?.995:.005))/ATW,UV[k*2+1]?.995:.005,a[4])}}
+ c.n=v.length/6;if(!c.buf)c.buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,c.buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(v),gl.STATIC_DRAW);c.dirty=false}
+let offs=[];function wantRD(){offs=[];const r=S.rd;for(let dx=-r;dx<=r;dx++)for(let dz=-r;dz<=r;dz++)if(dx*dx+dz*dz<=r*r)offs.push([dx,dz,dx*dx+dz*dz]);offs.sort((a,b)=>a[2]-b[2])}
+wantRD();
+// ---- player ----
+const pl={x:8.5,y:40,z:8.5,vy:0,yaw:0,pitch:0,g:false,hp:20,food:20,fly:false},keys={};
+const solid=(x,y,z)=>getBlock(Math.floor(x),Math.floor(y),Math.floor(z))>0;
+const hit=(x,y,z)=>{for(const dx of[-.3,.3])for(const dz of[-.3,.3])for(const dy of[.05,.9,1.75])if(solid(x+dx,y+dy,z+dz))return true;return false};
+function step(dt){const fl=pl.fly,f=(keys.KeyW?1:0)-(keys.KeyS?1:0),r=(keys.KeyD?1:0)-(keys.KeyA?1:0),sp=fl?(keys.ControlLeft?20:10.5):keys.ShiftLeft?6.5:4.3,sy=Math.sin(pl.yaw),cy=Math.cos(pl.yaw);
+ let vx=(-sy*f+cy*r),vz=(-cy*f-sy*r);const l=Math.hypot(vx,vz)||1;vx=vx/l*sp*(f||r?1:0);vz=vz/l*sp*(f||r?1:0);
+ if(!fl){if(keys.Space&&pl.g){pl.vy=8.5;pl.g=false}pl.vy-=28*dt}else pl.vy=((keys.Space?1:0)-(keys.ShiftLeft?1:0))*sp*.8;
+ if(!hit(pl.x+vx*dt,pl.y,pl.z))pl.x+=vx*dt;if(!hit(pl.x,pl.y,pl.z+vz*dt))pl.z+=vz*dt;
+ const ny=pl.y+pl.vy*dt;if(hit(pl.x,ny,pl.z)){if(pl.vy<0){pl.g=true;if(!fl)fallDmg(-pl.vy)}pl.vy=0}else{pl.y=ny;pl.g=false}
+ if(pl.y<-20){pl.y=height(8,8)+3;pl.x=pl.z=8.5;pl.vy=0}}
+function ray(){const d=[-Math.sin(pl.yaw)*Math.cos(pl.pitch),Math.sin(pl.pitch),-Math.cos(pl.yaw)*Math.cos(pl.pitch)];let x=pl.x,y=pl.y+1.62,z=pl.z,last=null;
+ for(let i=0;i<120;i++){const b=[Math.floor(x),Math.floor(y),Math.floor(z)];if(getBlock(b[0],b[1],b[2])>0)return{b,p:last};last=b;x+=d[0]*.05;y+=d[1]*.05;z+=d[2]*.05}return null}
+// ---- input ----
+function lock(){if(!playing||scr||chatOpen)return;try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(e){}}
+function startGame(withLock){if(!started){started=true;pl.y=height(8,8)+3}playing=true;show(null);$('hud').style.display='block';$('bPlay').textContent='Resume';if(withLock!==false)lock();else say('Click the game to capture the mouse.','sys')}
+$('bPlay').onclick=()=>startGame(true);
+document.addEventListener('pointerlockchange',()=>{if(playing&&!document.pointerLockElement&&!chatOpen&&!invOpen&&!scr)show('menu')});
+document.addEventListener('mousemove',e=>{if(document.pointerLockElement==cv){pl.yaw-=e.movementX*.0025;pl.pitch=cl(pl.pitch-e.movementY*.0025,-1.55,1.55)}});
+cv.oncontextmenu=e=>e.preventDefault();
+// ===== world decoration: caves, ores, gravel/dirt pockets, buried chests, trees (deterministic per chunk + world seed) =====
+const rng32=s=>()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+function decorate(b,cx,cz){const R=rng32(hash(cx*31+SX,cz*17+SZ)),I=(x,z,y)=>(x*16+z)*H+y,top=new Int16Array(256);
+ for(let x=0;x<16;x++)for(let z=0;z<16;z++){let y=H-1;while(y>0&&!b[I(x,z,y)])y--;top[x*16+z]=y;b[I(x,z,0)]=10;if(b[I(x,z,1)]==3&&R()<.5)b[I(x,z,1)]=10}
+ for(let n=0;n<2;n++){let x=R()*16,y=6+R()*14,z=R()*16,a=R()*6.28,p=R()-.5;const L=14+(R()*14|0);
+  for(let s=0;s<L;s++){a+=(R()-.5)*.8;p=p*.9+(R()-.5)*.4;x+=Math.cos(a)*1.4;z+=Math.sin(a)*1.4;y+=p;const r=1.3+R()*1.2;
+   for(let dx=-2;dx<=2;dx++)for(let dy=-2;dy<=2;dy++)for(let dz=-2;dz<=2;dz++){const bx=Math.floor(x)+dx,by=Math.floor(y)+dy,bz=Math.floor(z)+dz;
+    if(bx<0||bx>15||bz<0||bz>15||by<3||dx*dx+dy*dy+dz*dz>r*r||by>=top[bx*16+bz]-3)continue;const q=I(bx,bz,by);if(b[q]==3)b[q]=0}}}
+ const vein=(id,tries,size,y0,y1)=>{for(let t=0;t<tries;t++){let x=R()*16|0,z=R()*16|0,y=y0+(R()*(y1-y0)|0);
+  for(let s=0;s<size;s++){if(y>=1&&y<H){const q=I(x,z,y);if(b[q]==3&&y<top[x*16+z]-2)b[q]=id}const d=R()*6|0;if(d==0&&x<15)x++;else if(d==1&&x>0)x--;else if(d==2&&z<15)z++;else if(d==3&&z>0)z--;else if(d==4)y++;else y--}}};
+ vein(11,6,14,3,30);vein(2,6,10,3,34);vein(12,14,8,1,40);vein(13,8,6,1,36);vein(14,2,5,1,16);vein(16,4,6,1,14);vein(15,1,5,1,12);vein(17,1,4,1,16);if(R()<.5)vein(18,2,1,1,30);
+ if(R()<.6)for(let t=0;t<30;t++){const x=R()*16|0,z=R()*16|0;for(let y=4;y<top[x*16+z]-4;y++)if(!b[I(x,z,y)]&&b[I(x,z,y-1)]){b[I(x,z,y)]=5;t=99;break}}
+ for(let x=2;x<14;x++)for(let z=2;z<14;z++){const ty=top[x*16+z];if(ty<15||ty>H-10||b[I(x,z,ty)]!=1||(cx==0&&cz==0&&x>5&&x<11&&z>5&&z<11)||R()>.012)continue;const th=4+(R()*3|0);
+  for(let y=1;y<=th;y++)b[I(x,z,ty+y)]=8;
+  for(let dy=th-2;dy<=th+1;dy++){const rr=dy>=th?1:2;for(let dx=-rr;dx<=rr;dx++)for(let dz=-rr;dz<=rr;dz++){if(Math.abs(dx)==rr&&Math.abs(dz)==rr&&(dy>=th||R()<.5))continue;const q=I(x+dx,z+dz,ty+dy);if(!b[q])b[q]=9}}}}
+// ===== player state =====
+if(S.gm!='survival')S.gm='creative';
+const inv={main:Array(36).fill(null)},armor=Array(4).fill(null),CH={},FUR={},ENT=[],mouse={l:false},mine={k:'',t:0,cd:0},ORD=[...Array(36).keys()],FUEL={},SMELT={};
+let cur=null,invOpen=false,ui=null,uiSlots=[],sel=0,lastSp=0,heldT=0,hudT=0,uiT=0,foodT=0,regT=0;
+const def=id=>id<256?BLK[id]:ITM[id],maxN=id=>id<256?64:ITM[id].max;
+{const f=(n,v)=>{FUEL[NAME[n]]=v};f('coal',80);f('charcoal',80);f('planks',15);f('log',15);f('stick',5);f('coal_block',800);f('blaze_rod',120);f('bowl',5);f('chest',15);f('crafting_table',15);
+ for(const t of['pickaxe','axe','shovel','sword','hoe'])f('wooden_'+t,10);
+ for(const[a,b]of Object.entries({iron_ore:'iron_ingot',gold_ore:'gold_ingot',sand:'glass',cobblestone:'stone',clay_ball:'brick',raw_beef:'steak',raw_porkchop:'cooked_porkchop',raw_chicken:'cooked_chicken',potato:'baked_potato',log:'charcoal',raw_fish:'cooked_fish',coal_ore:'coal',diamond_ore:'diamond',lapis_ore:'lapis',redstone_ore:'redstone',emerald_ore:'emerald'}))SMELT[NAME[a]]=NAME[b]}
+function addItem(it){let n=it.n;const m=maxN(it.id),a=inv.main;
+ if(m>1)for(const i of ORD){const s=a[i];if(s&&s.id==it.id&&s.n<m){const t=Math.min(m-s.n,n);s.n+=t;n-=t;if(!n)return 0}}
+ for(const i of ORD)if(!a[i]){const t=Math.min(m,n);a[i]={id:it.id,n:t,d:it.d};n-=t;if(!n)return 0}
+ return n}
+function fits(it){let c=0;const m=maxN(it.id);for(const s of inv.main)c+=s?(s.id==it.id&&m>1?m-s.n:0):m;return c>=it.n}
+function useHeld(){const s=inv.main[sel];if(s&&--s.n<=0)inv.main[sel]=null;refresh()}
+function wear(){const s=inv.main[sel],d=s&&ITM[s.id];if(d&&d.dur){s.d=(s.d||0)+1;if(s.d>=d.dur)inv.main[sel]=null;refresh()}}
+// ===== health / hunger =====
+function hurt(n){if(S.gm!='survival')return;pl.hp-=n;if(pl.hp<=0)die()}
+function die(){say('You died! Respawning (inventory kept).','sys');pl.hp=20;pl.food=20;pl.x=pl.z=8.5;pl.y=height(8,8)+3;pl.vy=0}
+function fallDmg(v){const d=Math.floor(v*v/56-3);if(d>0)hurt(d)}
+// ===== dropped items =====
+function spawnDrop(x,y,z,it,vx,vy,vz,age){ENT.push({x,y,z,vx:vx??(Math.random()-.5)*2,vy:vy??3,vz:vz??(Math.random()-.5)*2,id:it.id,n:it.n,d:it.d,age:age??0});if(ENT.length>300)ENT.shift()}
+function dropHeld(all){const s=inv.main[sel];if(!s)return;const n=all?s.n:1,d=-Math.sin(pl.yaw)*5,e=-Math.cos(pl.yaw)*5;spawnDrop(pl.x,pl.y+1.3,pl.z,{id:s.id,n,d:s.d},d,2,e,-1);s.n-=n;if(s.n<=0)inv.main[sel]=null;refresh()}
+function tickEnt(dt){for(let i=ENT.length-1;i>=0;i--){const e=ENT[i];e.age+=dt;if(e.age>300||e.y<-10){ENT.splice(i,1);continue}
+  e.vy-=20*dt;const nx=e.x+e.vx*dt,nz=e.z+e.vz*dt;let ny=e.y+e.vy*dt;
+  if(solid(nx,e.y,e.z))e.vx=0;else e.x=nx;if(solid(e.x,e.y,nz))e.vz=0;else e.z=nz;
+  if(e.vy<0&&solid(e.x,ny-.12,e.z)){e.vy=0;ny=e.y;const f=Math.exp(-6*dt);e.vx*=f;e.vz*=f}else if(e.vy>0&&solid(e.x,ny+.12,e.z))e.vy=0;
+  e.y=ny;if(solid(e.x,e.y,e.z))e.y+=dt*4;
+  if(e.age>.5&&Math.abs(e.x-pl.x)<1.4&&Math.abs(e.z-pl.z)<1.4&&e.y>pl.y-1&&e.y<pl.y+2.2){const l=addItem(e);if(l<e.n){e.n=l;refresh()}if(!e.n)ENT.splice(i,1)}}}
+const EB=gl.createBuffer(),P3=prog('attribute vec3 p;attribute vec2 u;uniform mat4 m;varying vec2 vu;void main(){gl_Position=m*vec4(p,1.);vu=u;}','precision mediump float;uniform sampler2D t;varying vec2 vu;void main(){vec4 c=texture2D(t,vu);if(c.a<.5)discard;gl_FragColor=c;}'),U3={m:gl.getUniformLocation(P3,'m')};
+function drawEntities(M){if(!ENT.length||!ICS)return;const v=[],rx=Math.cos(pl.yaw)*.24,rz=-Math.sin(pl.yaw)*.24,tm=performance.now()/400;
+ for(const e of ENT){const i=ICX[e.id],c=i%32,r=(i/32)|0,u0=(c*32+.5)/ICW,u1=(c*32+31.5)/ICW,v0=(r*32+.5)/ICH,v1=(r*32+31.5)/ICH,y=e.y+.3+Math.sin(tm+e.x*3)*.05;
+  v.push(e.x-rx,y-.24,e.z-rz,u0,v1,e.x+rx,y-.24,e.z+rz,u1,v1,e.x+rx,y+.24,e.z+rz,u1,v0,e.x-rx,y-.24,e.z-rz,u0,v1,e.x+rx,y+.24,e.z+rz,u1,v0,e.x-rx,y+.24,e.z-rz,u0,v0)}
+ gl.useProgram(P3);gl.uniformMatrix4fv(U3.m,false,M);gl.bindTexture(gl.TEXTURE_2D,ICT);gl.bindBuffer(gl.ARRAY_BUFFER,EB);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(v),gl.STREAM_DRAW);
+ gl.enableVertexAttribArray(0);gl.enableVertexAttribArray(1);gl.disableVertexAttribArray(2);gl.vertexAttribPointer(0,3,gl.FLOAT,false,20,0);gl.vertexAttribPointer(1,2,gl.FLOAT,false,20,12);gl.drawArrays(gl.TRIANGLES,0,v.length/5)}
+// ===== breaking / placing =====
+const canH=(id,s)=>{const b=BLK[id],t=s&&ITM[s.id];return !b.tier||(t&&t.tool==b.tool&&t.tier>=b.tier)};
+function mineTime(id,s){const b=BLK[id];if(b.h<0)return 1e9;const t=s&&ITM[s.id],right=t&&b.tool&&t.tool==b.tool;return Math.max(.05,b.h*(canH(id,s)?1.5:5)/(right?t.spd:1))}
+function dropsOf(id){const b=BLK[id];if(id==11)return[{id:Math.random()<.1?NAME.flint:11,n:1}];if(!b.drop)return[{id,n:1}];const o=[];
+ for(const[nm,mn=1,mx=mn,ch=1]of b.drop)if(Math.random()<ch)o.push({id:NAME[nm],n:mn+Math.floor(Math.random()*(mx-mn+1))});return o}
+function netBlk(x,y,z,id){if(net.st=='online'&&net.ws&&net.mode=='relay')try{net.ws.send(JSON.stringify({t:'blk',x,y,z,id}))}catch(e){}}
+function breakBlock(x,y,z){const id=getBlock(x,y,z),b=BLK[id];if(!b||b.h<0)return;const sv=S.gm=='survival',s=inv.main[sel],k=x+','+y+','+z,px=x+.5,py=y+.5,pz=z+.5;
+ if(id==5&&(sv||CH[k])){for(const it of getChest(k))if(it)spawnDrop(px,py,pz,it);delete CH[k]}
+ if(id==20&&FUR[k]){for(const it of FUR[k].s)if(it)spawnDrop(px,py,pz,it);delete FUR[k]}
+ if(sv){if(canH(id,s))for(const d of dropsOf(id))spawnDrop(px,py,pz,d);if(b.h>0)wear()}
+ setBlock(x,y,z,0);netBlk(x,y,z,0)}
+function useItem(){const r=ray();
+ if(r&&!keys.ShiftLeft){const id=getBlock(r.b[0],r.b[1],r.b[2]),k=r.b.join(',');if(id==19)return openInv('table');if(id==5)return openInv('chest',k);if(id==20)return openInv('furn',k)}
+ const s=inv.main[sel];if(!s)return;const d=def(s.id);
+ if(s.id<256){if(!r||!r.p)return;const[x,y,z]=r.p;setBlock(x,y,z,s.id);if(hit(pl.x,pl.y,pl.z)){setBlock(x,y,z,0);return}
+  const k=r.p.join(',');if(s.id==5)CH[k]=Array(27).fill(null);if(s.id==20)FUR[k]=newFur();netBlk(x,y,z,s.id);if(S.gm=='survival')useHeld()}
+ else if(d.food&&pl.food<20&&S.gm=='survival'){pl.food=Math.min(20,pl.food+d.food);useHeld()}}
+// ===== containers =====
+function getChest(k){if(!CH[k]){const[x,y,z]=k.split(',').map(Number),R=rng32(hash(x*7+SX,z*13+y)),a=Array(27).fill(null),L=[['iron_ingot',1,4],['gold_ingot',1,3],['coal',2,8],['bread',1,3],['apple',1,4],['redstone',2,6],['diamond',1,2],['stick',2,8],['string',1,4],['bone',1,4],['planks',4,16],['cobblestone',8,24],['iron_pickaxe',1,1],['iron_sword',1,1],['leather',1,3],['emerald',1,2],['raw_beef',2,5],['torch',4,12]];
+  for(let i=0,n=5+(R()*5|0);i<n;i++){const[nm,lo,hi]=L[R()*L.length|0];a[R()*27|0]={id:NAME[nm],n:lo+(R()*(hi-lo+1)|0)}}CH[k]=a}return CH[k]}
+const newFur=()=>({s:[null,null,null],burn:0,burnMax:1,cook:0}),getFur=k=>FUR[k]||(FUR[k]=newFur()),dec=(a,i)=>{if(--a[i].n<=0)a[i]=null};
+function furnTick(f,dt){const inp=f.s[0],sm=inp&&SMELT[inp.id],out=f.s[2],can=sm&&(!out||(out.id==sm&&out.n<64));
+ if(f.burn<=0&&can&&f.s[1]&&FUEL[f.s[1].id]){f.burnMax=f.burn=FUEL[f.s[1].id];dec(f.s,1)}
+ if(f.burn>0){f.burn-=dt;if(can){f.cook+=dt;if(f.cook>=10){f.cook=0;dec(f.s,0);f.s[2]=out?{id:out.id,n:out.n+1}:{id:sm,n:1}}}else f.cook=0}else f.cook=Math.max(0,f.cook-dt*2)}
+// ===== world tick: mining, drops, furnaces, hunger =====
+function tickWorld(dt){const act=playing&&!scr&&!invOpen&&!chatOpen&&document.pointerLockElement==cv;let prog=0;
+ if(act&&mouse.l){const r=ray();if(r){const id=getBlock(r.b[0],r.b[1],r.b[2]),k=r.b.join(',');
+   if(S.gm=='creative'){mine.cd-=dt;if(mine.cd<=0){breakBlock(r.b[0],r.b[1],r.b[2]);mine.cd=.25}}
+   else if(BLK[id]){if(mine.k!=k){mine.k=k;mine.t=0}const need=mineTime(id,inv.main[sel]);mine.t+=dt;prog=Math.min(1,mine.t/need);if(mine.t>=need){breakBlock(r.b[0],r.b[1],r.b[2]);mine.k='';mine.t=0;prog=0}}}
+  else{mine.k='';mine.t=0}}else{mine.k='';mine.t=0}
+ const mb=$('mineb');mb.style.display=prog>0?'block':'none';mb.firstChild.style.width=prog*100+'%';
+ tickEnt(dt);for(const k in FUR)furnTick(FUR[k],dt);
+ if(S.gm=='survival'){foodT+=dt;regT+=dt;if(foodT>45){foodT=0;if(pl.food>0)pl.food--}if(regT>4){regT=0;if(pl.food>=18&&pl.hp<20)pl.hp++;else if(pl.food<=0&&pl.hp>1)hurt(1)}}
+ hudT+=dt;if(hudT>.25){hudT=0;$('stat').textContent='\u2764 '+Math.ceil(pl.hp)+'   \uD83C\uDF57 '+pl.food}
+ if(heldT>0){heldT-=dt;if(heldT<=0)$('held').style.opacity=0}
+ if(invOpen&&ui&&ui.f){uiT+=dt;if(uiT>.2){uiT=0;const f=ui.f;ui.fp.textContent=(f.burn>0?'\uD83D\uDD25 ':'')+Math.round(f.cook*10)+'%';paintAll()}}}
+// ===== hotbar HUD =====
+function renderBar(){const b=$('bar');b.innerHTML='';for(let i=0;i<9;i++){const e=document.createElement('div');e.className='slot'+(i==sel?' s':'');e._a=inv.main;e._i=i;paint(e);b.appendChild(e)}$('stat').style.display=S.gm=='survival'?'block':'none'}
+const refresh=()=>{renderBar();if(invOpen)paintAll()};
+function showHeld(){const s=inv.main[sel],h=$('held');h.textContent=s?def(s.id).label:'';h.style.opacity=1;heldT=2}
+function paint(e){const s=e._a[e._i];e.innerHTML='';e.style.backgroundImage=s?'url('+iconURL(s.id)+')':'';
+ if(s){const d=def(s.id);if(s.n>1){const c=document.createElement('b');c.textContent=s.n;e.appendChild(c)}if(s.d&&d.dur){const r=document.createElement('i'),f=1-s.d/d.dur;r.style.width=Math.round(32*f)+'px';r.style.background='hsl('+Math.round(120*f)+',80%,45%)';e.appendChild(r)}}}
+const paintAll=()=>uiSlots.forEach(paint);
+// ===== inventory / crafting / chest / furnace / creative UI =====
+const slotEl=(a,i,k)=>{const e=document.createElement('div');e.className='slot'+(k=='out'||k=='take'?' out':'');e._a=a;e._i=i;e._k=k||'';uiSlots.push(e);paint(e);return e};
+const gridEl=(a,from,n,cols,k)=>{const d=document.createElement('div');d.className='grid';d.style.gridTemplateColumns='repeat('+cols+',38px)';for(let j=0;j<n;j++)d.appendChild(slotEl(a,from+j,k));return d};
+const divEl=(cls,...kids)=>{const d=document.createElement('div');d.className=cls;kids.forEach(x=>d.append(x));return d},txEl=(t,cls)=>{const s=document.createElement('span');s.textContent=t;if(cls)s.className=cls;return s};
+function openInv(mode,k){if(invOpen)return;invOpen=true;for(const q in keys)keys[q]=false;mouse.l=false;document.exitPointerLock();
+ ui={mode,k,grid:null,gw:0,out:[null],chest:null,f:null};uiSlots=[];const p=$('pbody');p.innerHTML='';const bag=()=>p.append(txEl('Inventory','lbl'),gridEl(inv.main,9,27,9),divEl('sp'),gridEl(inv.main,0,9,9)),title=t=>{$('ptitle').textContent=t};
+ if(mode=='inv'){ui.grid=Array(4).fill(null);ui.gw=2;title('Inventory');p.append(divEl('flex',gridEl(armor,0,4,1),gridEl(ui.grid,0,4,2),txEl('\u279C'),gridEl(ui.out,0,1,1,'out')));bag()}
+ else if(mode=='table'){ui.grid=Array(9).fill(null);ui.gw=3;title('Crafting');p.append(divEl('flex',gridEl(ui.grid,0,9,3),txEl('\u279C'),gridEl(ui.out,0,1,1,'out')));bag()}
+ else if(mode=='chest'){ui.chest=getChest(k);title('Chest');p.append(gridEl(ui.chest,0,27,9),divEl('sp'));bag()}
+ else if(mode=='furn'){ui.f=getFur(k);title('Furnace');ui.fp=txEl('');p.append(divEl('flex',divEl('col',gridEl(ui.f.s,0,1,1),ui.fp,gridEl(ui.f.s,1,1,1)),txEl('\u279C'),gridEl(ui.f.s,2,1,1,'take')));bag()}
+ else{title('Creative Inventory');const q=document.createElement('input');q.id='csr';q.type='text';q.placeholder='Search items...';const box=divEl('cbox'),all=ALL.map(id=>({id,n:1}));
+  const fill=()=>{const f=q.value.toLowerCase().trim();box.innerHTML='';uiSlots=uiSlots.filter(e=>!e._c);const arr=all.filter(s=>!f||def(s.id).label.toLowerCase().includes(f)||def(s.id).name.includes(f));arr.forEach((s,i)=>{const e=slotEl(arr,i,'cre');e._c=1;box.appendChild(e)})};
+  q.oninput=fill;q.onkeydown=e=>{e.stopPropagation();if(e.key=='Escape')closeInv()};p.append(q,box,divEl('sp'),gridEl(inv.main,0,9,9));fill();setTimeout(()=>q.focus(),0)}
+ $('inv').style.display='flex';finish()}
+function closeInv(){if(!invOpen)return;const ret=it=>{if(!it)return;const l=addItem(it);if(l>0)spawnDrop(pl.x,pl.y+1.2,pl.z,{id:it.id,n:l,d:it.d},-Math.sin(pl.yaw)*4,2,-Math.cos(pl.yaw)*4,-1)};
+ if(ui.grid)ui.grid.forEach(ret);if(ui.mode!='creative')ret(cur);cur=null;invOpen=false;ui=null;$('inv').style.display='none';$('tip').style.display='none';updCur();lock();refresh()}
+function finish(){if(ui&&ui.grid){const r=matchRecipe(ui.grid,ui.gw);ui.out[0]=r?{id:r.out,n:r.n}:null}paintAll();updCur();renderBar()}
+function updCur(){const e=$('cur');e.innerHTML='';e.style.backgroundImage=cur?'url('+iconURL(cur.id)+')':'';if(cur&&cur.n>1){const b=document.createElement('b');b.textContent=cur.n;e.appendChild(b)}}
+function takeCraft(){ui.grid.forEach((s,i)=>{if(s&&--s.n<=0)ui.grid[i]=null});const r=matchRecipe(ui.grid,ui.gw);ui.out[0]=r?{id:r.out,n:r.n}:null}
+function accept(a,i,it){if(a===armor)return ITM[it.id]&&ITM[it.id].arm===i;if(ui&&ui.f&&a===ui.f.s){if(i==2)return false;if(i==1)return!!FUEL[it.id]}return true}
+function quick(el){const a=el._a,i=el._i,s=a[i];let to;
+ if(a===inv.main){if(ui.mode=='chest')to=[ui.chest,0,27];else if(ui.mode=='furn')to=FUEL[s.id]?[ui.f.s,1,2]:[ui.f.s,0,1];else if(i<9)to=[inv.main,9,36];else to=[inv.main,0,9]}else to=[inv.main,0,36];
+ const[b,lo,hi]=to,m=maxN(s.id);for(let j=lo;j<hi&&s.n;j++){const t=b[j];if(t&&t.id==s.id&&t.n<m&&accept(b,j,s)){const q=Math.min(m-t.n,s.n);t.n+=q;s.n-=q}}
+ for(let j=lo;j<hi&&s.n;j++)if(!b[j]&&accept(b,j,s)){b[j]={...s};s.n=0}if(!s.n)a[i]=null}
+function clickSlot(el,btn,sh){const a=el._a,i=el._i,k=el._k,s=a[i],ok=it=>accept(a,i,it);
+ if(k=='cre'){if(sh)addItem({id:s.id,n:maxN(s.id)});else if(cur)cur=null;else cur={id:s.id,n:btn==2?1:maxN(s.id)};return finish()}
+ if(k=='out'){if(!s)return;if(sh){let g=0;while(ui.out[0]&&g++<64&&fits(ui.out[0])){addItem({...ui.out[0]});takeCraft()}}else{if(cur&&(cur.id!=s.id||cur.n+s.n>maxN(s.id)))return;const o={...s};takeCraft();cur=cur?{...cur,n:cur.n+o.n}:o}return finish()}
+ if(k=='take'){if(!s)return;if(sh){const l=addItem({...s});a[i]=l?{...s,n:l}:null}else if(!cur||(cur.id==s.id&&cur.n+s.n<=maxN(s.id))){cur=cur?{...cur,n:cur.n+s.n}:{...s};a[i]=null}return finish()}
+ if(sh&&s){quick(el);return finish()}
+ if(btn==0){if(!cur){if(s){cur=s;a[i]=null}}else if(!s){if(ok(cur)){a[i]=cur;cur=null}}
+  else if(s.id==cur.id&&maxN(s.id)>1){if(ok(cur)){const t=Math.min(maxN(s.id)-s.n,cur.n);s.n+=t;cur.n-=t;if(!cur.n)cur=null}}else if(ok(cur)){a[i]=cur;cur=s}}
+ else{if(!cur){if(s){const h=Math.ceil(s.n/2);cur={...s,n:h};s.n-=h;if(!s.n)a[i]=null}}else if(!s){if(ok(cur)){a[i]={...cur,n:1};if(--cur.n<=0)cur=null}}
+  else if(s.id==cur.id&&s.n<maxN(s.id)){if(ok(cur)){s.n++;if(--cur.n<=0)cur=null}}else if(ok(cur)){a[i]=cur;cur=s}}
+ finish()}
+$('inv').addEventListener('mousedown',e=>{const el=e.target.closest&&e.target.closest('.slot');
+ if(el){e.preventDefault();return clickSlot(el,e.button,e.shiftKey)}
+ if(e.target.id=='inv'&&cur&&ui.mode!='creative'){spawnDrop(pl.x,pl.y+1.3,pl.z,{id:cur.id,n:cur.n,d:cur.d},-Math.sin(pl.yaw)*4,2,-Math.cos(pl.yaw)*4,-1);cur=null;finish()}});
+$('inv').addEventListener('contextmenu',e=>e.preventDefault());
+document.addEventListener('mousemove',e=>{if(!invOpen)return;const c=$('cur'),tp=$('tip'),t=e.target.closest&&e.target.closest('.slot'),s=t&&t._a[t._i];c.style.left=(e.clientX-16)+'px';c.style.top=(e.clientY-16)+'px';
+ if(s){const d=def(s.id);tp.textContent=d.label+(s.d?' ('+(d.dur-s.d)+'/'+d.dur+')':'');tp.style.display='block';tp.style.left=(e.clientX+14)+'px';tp.style.top=(e.clientY-30)+'px'}else tp.style.display='none'});
+// ===== commands / game mode =====
+function setMode(m){if(m!='survival'&&m!='creative')return;S.gm=m;save();pl.fly=false;$('sGm').value=m;if(invOpen)closeInv();renderBar();say('Game mode: '+m,'sys')}
+$('sGm').value=S.gm;$('sGm').onchange=()=>setMode($('sGm').value);
+function cmd(t){const[c,...a]=t.slice(1).trim().split(/\s+/);
+ if(c=='gamemode'||c=='gm'){const m={s:'survival',0:'survival',survival:'survival',c:'creative',1:'creative',creative:'creative'}[(a[0]||'').toLowerCase()];if(m)setMode(m);else say('Usage: /gamemode survival|creative','sys')}
+ else if(c=='give'){const q=(a[0]||'').toLowerCase(),id=NAME[q]||ALL.find(i=>def(i).name.includes(q)),n=Math.max(1,Math.min(2304,+a[1]||1));if(!id||!q)return say('Unknown item: '+q+' (try /items)','sys');let left=n;while(left>0){const t=Math.min(left,maxN(id));if(addItem({id,n:t}))break;left-=t}say('Gave '+(n-left)+' '+def(id).label,'sys');refresh()}
+ else if(c=='clear'){inv.main.fill(null);refresh()}
+ else if(c=='items')say(ALL.map(i=>def(i).name).join(', '),'sys');
+ else say('Commands: /gamemode survival|creative, /give <item> [n], /clear, /items','sys')}
+// ===== input =====
+cv.onmousedown=e=>{if(document.pointerLockElement!=cv)return lock();
+ if(e.button==0){mouse.l=true;mine.k='';mine.t=0;mine.cd=0}else if(e.button==2)useItem();
+ else if(e.button==1){e.preventDefault();const r=ray();if(r&&S.gm=='creative'){const id=getBlock(r.b[0],r.b[1],r.b[2]),j=inv.main.findIndex((s,n)=>n<9&&s&&s.id==id);if(j>=0)sel=j;else inv.main[sel]={id,n:64};renderBar();showHeld()}}};
+document.addEventListener('mouseup',e=>{if(e.button==0)mouse.l=false});
+document.addEventListener('wheel',e=>{if(playing&&!scr&&!invOpen){sel=(sel+(e.deltaY>0?1:8))%9;renderBar();showHeld()}});
+document.addEventListener('keydown',e=>{if(chatOpen||egl.on)return;
+ if(scr){if(e.key=='Escape'&&scr!='menu')show('menu');return}
+ if(invOpen){if(e.code=='KeyE'||e.key=='Escape'){e.preventDefault();closeInv()}return}
+ if(e.code=='KeyT'||e.code=='Enter'){e.preventDefault();return openChat()}
+ if(e.code=='KeyE'){e.preventDefault();return openInv(S.gm=='creative'?'creative':'inv')}
+ if(e.code=='KeyQ'){e.preventDefault();return dropHeld(e.ctrlKey)}
+ if(e.code=='F4'){e.preventDefault();return setMode(S.gm=='creative'?'survival':'creative')}
+ if(/^Digit[1-9]$/.test(e.code)){sel=+e.code[5]-1;renderBar();showHeld()}
+ if(e.code=='Space'){e.preventDefault();const n=performance.now();if(S.gm=='creative'&&!e.repeat){if(n-lastSp<300){pl.fly=!pl.fly;pl.vy=0}lastSp=n}}
+ keys[e.code]=true});
+document.addEventListener('keyup',e=>{keys[e.code]=false});
+renderBar();READY=true;
+// ---- render loop ----
+const rgb=h=>[1,3,5].map(i=>parseInt(h.substr(i,2),16)/255);
+let last=performance.now(),fr=0,fps=0,acc=0;
+function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/1000);last=now;if(!playing)return;
+ if(cv.width!=innerWidth||cv.height!=innerHeight){cv.width=innerWidth;cv.height=innerHeight}
+ if(!scr)step(dt);tickWorld(dt);fr++;acc+=dt;if(acc>=.5){fps=Math.round(fr/acc);fr=0;acc=0}
+ const pcx=Math.floor(pl.x)>>4,pcz=Math.floor(pl.z)>>4,t0=performance.now();
+ for(const[dx,dz]of offs){const k=key(pcx+dx,pcz+dz);let c=chunks.get(k);if(!c){c=mk(pcx+dx,pcz+dz);chunks.set(k,c);for(const[ax,az]of[[1,0],[-1,0],[0,1],[0,-1]]){const n=chunks.get(key(pcx+dx+ax,pcz+dz+az));if(n)n.dirty=true}}if(c.dirty)mesh(c);if(performance.now()-t0>8)break}
+ if(fr%30==0){const lim=(S.rd+2)**2;for(const[k,c]of chunks)if((c.cx-pcx)**2+(c.cz-pcz)**2>lim){if(c.buf)gl.deleteBuffer(c.buf);chunks.delete(k)}}
+ gl.viewport(0,0,cv.width,cv.height);gl.clearColor(.55,.75,.95,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);
+ const V=mul(rotX(-pl.pitch),mul(rotY(-pl.yaw),tr(-pl.x,-(pl.y+1.62),-pl.z))),M=mul(persp(Math.min(S.fov,175)*Math.PI/180,cv.width/cv.height,.05,S.rd*16+32),V);
+ gl.useProgram(P1);gl.uniformMatrix4fv(U1.m,false,M);gl.uniform1f(U1.fd,S.rd*16);gl.bindTexture(gl.TEXTURE_2D,atlas);gl.enableVertexAttribArray(0);gl.enableVertexAttribArray(1);gl.enableVertexAttribArray(2);
+ const lim2=(S.rd+1)**2;for(const c of chunks.values()){if(!c.n||(c.cx-pcx)**2+(c.cz-pcz)**2>lim2)continue;gl.bindBuffer(gl.ARRAY_BUFFER,c.buf);
+  gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(1,2,gl.FLOAT,false,24,12);gl.vertexAttribPointer(2,1,gl.FLOAT,false,24,20);gl.drawArrays(gl.TRIANGLES,0,c.n)}
+ drawEntities(M);
+ if(S.chest){const a=[];for(const c of chunks.values())for(let i=0;i<c.ch.length;i+=3){const x=c.ch[i],y=c.ch[i+1],z=c.ch[i+2];if((x-pl.x)**2+(z-pl.z)**2>9216)continue;for(let j=0;j<108;j+=3)a.push(x+CUBE[j],y+CUBE[j+1],z+CUBE[j+2])}
+  if(a.length){const b=gl.createBuffer(),c=rgb(S.color);gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(a),gl.STREAM_DRAW);
+   gl.useProgram(P2);gl.uniformMatrix4fv(U2.m,false,M);gl.uniform4f(U2.c,c[0],c[1],c[2],.5);gl.disableVertexAttribArray(1);gl.disableVertexAttribArray(2);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+   gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.disable(gl.DEPTH_TEST);gl.drawArrays(gl.TRIANGLES,0,a.length/3);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.disable(gl.BLEND);gl.deleteBuffer(b)}}
+ $('top').textContent='RustCraft Web Beta 0.1  '+fps+' fps\nXYZ '+pl.x.toFixed(1)+' '+pl.y.toFixed(1)+' '+pl.z.toFixed(1)+'\nChunks '+chunks.size+'  RD '+S.rd+'  FOV '+S.fov+'\nTerrain: '+(wasm?'Rust/WASM':'JS')+'\nMode: '+S.gm+(pl.fly?' (flying)':'')}
+requestAnimationFrame(loop);
+</script>
+<script id="eagler-gz" type="text/plain"></script></body></html>
