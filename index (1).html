@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RustCraft Web Beta 0.1</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#111;color:#fff;font:15px/1.35 "Courier New",monospace;user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+.scr{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:repeating-conic-gradient(#4b3623 0 25%,#3e2d1d 0 50%) 0 0/48px 48px}
+.scr.on{display:flex}
+h1{margin:0 0 18px;font-size:54px;color:#e9e2d2;text-shadow:4px 4px #000}h1 small{display:block;text-align:right;font-size:15px;color:#ffd24a;text-shadow:2px 2px #000}h2{margin:0 0 6px;text-shadow:2px 2px #000}
+button,input,select{font:inherit;color:#fff;width:380px}
+button{padding:9px;background:#7c7c7c;border:2px solid;border-color:#c6c6c6 #444 #444 #c6c6c6;text-shadow:2px 2px #333;cursor:pointer}
+button:hover:not(:disabled){background:#6f86c8}button:disabled{background:#555;color:#999;cursor:default}
+input[type=text],select{padding:7px;background:#000;border:2px solid #999}
+label{width:380px;display:block;text-shadow:1px 1px #000}label input[type=range]{width:100%}label input[type=checkbox],label input[type=color]{width:auto;vertical-align:middle}
+.dim{color:#bbb;font-size:13px;max-width:380px;text-align:center}
+#hud{display:none;position:fixed;inset:0;pointer-events:none}
+#cross{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:28px;text-shadow:0 0 3px #000}
+#top{position:absolute;left:8px;top:8px;text-shadow:1px 1px #000;white-space:pre}#netb{position:absolute;right:8px;top:8px;text-shadow:1px 1px #000}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#888;margin-right:6px}
+.dot.online{background:#4c4}.dot.connecting{background:#fc3}.dot.error{background:#e44}.dot.ping{background:#58f}
+#chat{position:absolute;left:8px;bottom:72px;width:min(560px,90vw);max-height:40vh;overflow:hidden;text-shadow:1px 1px #000}
+#chat div{background:#0006;padding:1px 6px}#chat .old{display:none}#chat.open{overflow-y:auto}#chat.open .old{display:block}.sys{color:#ffd24a}
+#ci{display:none;position:absolute;left:8px;bottom:42px;width:min(560px,90vw);padding:5px;background:#000a;border:1px solid #aaa;pointer-events:auto}
+#bar{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);display:flex;gap:4px}
+#bar div{width:62px;height:28px;border:2px solid #333;background:#0008;text-align:center;font-size:12px;line-height:24px}#bar .s{border-color:#fff}
+.row{display:flex;gap:8px;width:380px}.row button{flex:1;width:auto}
+#egl{position:fixed;inset:0;z-index:100;background:#000}#egl iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+#eglBack{position:absolute;left:50%;top:0;transform:translateX(-50%);width:auto;padding:2px 12px;font-size:12px;opacity:.35;border-radius:0 0 6px 6px}#eglBack:hover{opacity:1}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="menu" class="scr on"><h1>RustCraft Web<small>Beta 0.1</small></h1>
+<button id="bPlay">Play (Local World)</button><button id="bMp">Multiplayer</button><button id="bSet">Settings</button>
+<div id="wasm" class="dim"></div></div>
+<div id="mp" class="scr"><h2>Multiplayer</h2>
+<label>Username (3–16 letters, numbers, _)<input id="user" type="text" maxlength="16"></label>
+<label>Server address<input id="addr" type="text" placeholder="ws://localhost:8081"></label>
+<label>Protocol<select id="proto"><option value="eagler">Eaglercraft 1.8 – full game (real client)</option><option value="relay">RustCraft relay (chat only)</option></select></label>
+<button id="bSeal">Use SealCraft (wss://mc.sealcentral.co)</button>
+<div class="row"><button id="bConn">Connect</button><button id="bPing">Check status</button></div><div><span id="dot2" class="dot"></span><span id="st">Offline</span></div>
+<div class="dim">Eaglercraft opens the real EaglercraftX 1.8 client and joins with this username. The “← RustCraft” tab at the top brings you back.</div>
+<button class="back">Back</button></div>
+<div id="set" class="scr"><h2>Settings</h2>
+<label>Field of view: <b id="lsFov"></b><input id="sFov" type="range" min="30" max="200"></label>
+<label>Render distance: <b id="lsRd"></b><input id="sRd" type="range" min="2" max="64"></label>
+<label>Texture resolution: <b id="lsTex"></b><select id="sTex"><option>8</option><option>16</option><option>32</option></select></label>
+<label><input id="sCh" type="checkbox"> Highlight chests <input id="sCol" type="color"></label>
+<div class="dim">Saved automatically in this browser. FOV above 175° renders as 175° (rectilinear projection limit).</div>
+<button class="back">Done</button></div>
+<div id="hud"><div id="top"></div><div id="netb"><span id="dot" class="dot"></span><span id="stt">Offline</span></div><div id="cross">+</div>
+<div id="chat"></div><input id="ci" type="text" maxlength="100" placeholder="Chat — Enter to send, Esc to cancel"><div id="bar"></div></div>
+<script>
+'use strict';
+const WASM_B64="";
+const $=i=>document.getElementById(i),KEY='rustcraft.web.settings.v1',H=48,cl=(v,a,b)=>Math.min(b,Math.max(a,v));
+const S={fov:70,rd:12,chest:true,color:'#ffd700',tex:8,user:'Steve',addr:'ws://localhost:8081',proto:'eagler'};
+try{Object.assign(S,JSON.parse(localStorage.getItem(KEY)||'{}'))}catch(e){}
+S.fov=cl(+S.fov||70,30,200);S.rd=cl(Math.round(+S.rd)||12,2,64);S.tex=[8,16,32].includes(+S.tex)?+S.tex:8;
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+let scr='menu',playing=false,started=false,chatOpen=false;
+const show=id=>{scr=id;document.querySelectorAll('.scr').forEach(e=>e.classList.toggle('on',e.id==id))};
+$('bMp').onclick=()=>show('mp');$('bSet').onclick=()=>show('set');
+document.querySelectorAll('.back').forEach(b=>b.onclick=()=>show('menu'));
+for(const id of['user','addr','proto']){const e=$(id);e.value=S[id];e.oninput=e.onchange=()=>{S[id]=e.value.trim();save()}}
+[['sFov','fov',v=>v+'°'],['sRd','rd',v=>v+' chunks'],['sTex','tex',v=>v+'×'+v]].forEach(([id,k,f])=>{const e=$(id),l=$('l'+id);e.value=S[k];l.textContent=f(S[k]);
+ e.oninput=()=>{S[k]=+e.value;l.textContent=f(S[k]);save();if(k=='tex')buildAtlas();if(k=='rd')wantRD()}});
+$('sCh').checked=S.chest;$('sCh').onchange=()=>{S.chest=$('sCh').checked;save()};
+$('sCol').value=S.color;$('sCol').oninput=()=>{S.color=$('sCol').value;save()};
+// ---- chat ----
+const chatEl=$('chat'),ci=$('ci');
+function say(t,c){const d=document.createElement('div');d.textContent=t;if(c)d.className=c;chatEl.appendChild(d);while(chatEl.children.length>60)chatEl.firstChild.remove();setTimeout(()=>d.classList.add('old'),10000);chatEl.scrollTop=1e9}
+function openChat(){chatOpen=true;for(const k in keys)keys[k]=false;chatEl.classList.add('open');ci.style.display='block';ci.value='';document.exitPointerLock();ci.focus()}
+function closeChat(){chatOpen=false;chatEl.classList.remove('open');ci.style.display='none';ci.blur();lock()}
+ci.onkeydown=e=>{e.stopPropagation();if(e.key=='Enter'){const t=ci.value.trim();if(t)sendChat(t);closeChat()}else if(e.key=='Escape')closeChat()};
+function sendChat(t){if(net.st=='online'&&net.ws&&net.mode=='relay')net.ws.send(JSON.stringify({t:'chat',m:t}));else say('<'+(/^\w{3,16}$/.test(S.user)?S.user:'Steve')+'> '+t)}
+// ---- networking: transport + protocol adapters ----
+const net={ws:null,st:'offline',mode:'relay'};
+function setStatus(s,m){net.st=s;for(const[d,t]of[['dot','stt'],['dot2','st']]){$(d).className='dot '+s;$(t).textContent=m}$('bConn').textContent=(s=='online'||s=='connecting')?'Disconnect':'Connect'}
+function netClose(){const w=net.ws;net.ws=null;if(w)try{w.close()}catch(e){}}
+const ADAPT={
+ relay:{open(ws){ws.send(JSON.stringify({t:'join',u:S.user}))},
+  msg(d){let m;try{m=JSON.parse(d)}catch(e){return}
+   if(m.t=='ok'){setStatus('online','Connected to '+S.addr+' as '+S.user);say('Connected as '+S.user,'sys');startGame(false)}
+   else if(m.t=='chat')say('<'+m.u+'> '+m.m);else if(m.t=='sys')say(m.m,'sys');
+   else if(m.t=='err'){setStatus('error',String(m.m));netClose()}}},
+ // Server status check (Eaglercraft "Accept: MOTD" query). Actually joining is done by the embedded real client, see launchEagler().
+ ping:{open(ws){setStatus('connecting','Connected. Asking the server for its status…');ws.send('Accept: MOTD');
+  setTimeout(()=>{if(net.ws===ws&&net.st=='connecting'){setStatus('error','Connected, but no status reply in 5 s (the server may reject this page\u2019s origin or expect a different handshake)');netClose()}},5000)},
+  msg(d){if(typeof d!='string')return;let m=null;try{m=JSON.parse(d)}catch(e){}
+   const q=(m&&m.data)||{},mo=Array.isArray(q.motd)?q.motd.join(' '):'',on=q.online!=null?q.online+'/'+q.max+' players':'';
+   setStatus('ping','Server reachable: '+(mo||d.slice(0,80))+(on?' \u2014 '+on:'')+'. Press Connect to join.');netClose()}}};
+function netConnect(mode){
+ const url=S.addr.trim();
+ if(!/^[A-Za-z0-9_]{3,16}$/.test(S.user))return setStatus('error','Username must be 3–16 letters, numbers or _');
+ if(!/^wss?:\/\/\S+$/i.test(url))return setStatus('error','Address must start with ws:// or wss://');
+ if(location.protocol=='https:'&&/^ws:/i.test(url))return setStatus('error','HTTPS pages can only use wss:// addresses');
+ if(mode=='eagler')return launchEagler(url);
+ netClose();let ws;try{ws=new WebSocket(url)}catch(e){return setStatus('error','Cannot open socket: '+e.message)}
+ ws.binaryType='arraybuffer';net.ws=ws;net.mode=mode;setStatus('connecting','Connecting to '+url+'…');
+ const to=setTimeout(()=>{if(ws.readyState!=1){setStatus('error','Timed out after 8 seconds');netClose()}},8000);
+ ws.onopen=()=>{clearTimeout(to);if(net.ws===ws)ADAPT[net.mode].open(ws)};
+ ws.onmessage=e=>{if(net.ws===ws)ADAPT[net.mode].msg(e.data)};
+ ws.onerror=()=>{clearTimeout(to);if(net.ws===ws)setStatus('error','Connection failed (server offline, wrong address, or TLS/origin rejected)')};
+ ws.onclose=e=>{clearTimeout(to);if(net.ws===ws){net.ws=null;if(net.st!='error')setStatus('offline','Disconnected (code '+e.code+')')}}}
+$('bSeal').onclick=()=>{S.addr='wss://mc.sealcentral.co';S.proto='eagler';$('addr').value=S.addr;$('proto').value='eagler';save()};
+$('bConn').onclick=()=>{if(egl.busy)return;if(net.ws){netClose();setStatus('offline','Disconnected')}else netConnect(S.proto=='eagler'?'eagler':'relay')};
+$('bPing').onclick=()=>{if(egl.busy)return;if(net.ws){netClose();setStatus('offline','Cancelled')}else netConnect('ping')};
+// ---- Eaglercraft multiplayer ----
+// The real EaglercraftX 1.8 client is embedded (gzip+base64) in <script id="eagler-gz"> (see embed_eaglercraft.py). Connect unpacks it into an iframe and starts it
+// with the server address as its own "joinServer" launch option, so the whole Eaglercraft login/handshake/game is handled by the client itself.
+const egl={on:false,busy:false,html:null,was:false,hud:'',NS:'_eaglercraftX',BACK:'← RustCraft'};
+const gzip=async(u8,pack)=>new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new(pack?CompressionStream:DecompressionStream)('gzip'))).arrayBuffer());
+const u8b64=u=>{let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return btoa(s)};
+async function eaglerSource(){const el=$('eagler-gz'),b=el?el.textContent.trim():'';
+ if(b){const r=await fetch('data:application/gzip;base64,'+b);return new TextDecoder().decode(await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer())}
+ const r=await fetch('eaglercraft1-8.html').catch(()=>null);if(!r||!r.ok)throw new Error('no Eaglercraft client is embedded in this page (run embed_eaglercraft.py)');return r.text()}
+// The client keeps the player profile as gzip'd NBT in localStorage "<ns>.p". Put the chosen username in it so the client neither auto-generates one nor asks.
+async function seedProfile(name){const te=new TextEncoder(),k=egl.NS+'.p',str=s=>{const u=te.encode(s);return[u.length>>8,u.length&255,...u]},tag=(t,n,...v)=>[t,...str(n),...v];
+ let cur=null,raw;try{cur=localStorage.getItem(k)}catch(e){return false}
+ if(cur){raw=await gzip(Uint8Array.from(atob(cur),c=>c.charCodeAt(0)),0);const kk=[8,...str('username')];let at=-1;
+  for(let i=0;i+kk.length+2<=raw.length&&at<0;i++){let j=0;while(j<kk.length&&raw[i+j]==kk[j])j++;if(j==kk.length)at=i}
+  if(at<0)return false;const p=at+kk.length,old=raw[p]<<8|raw[p+1];raw=Uint8Array.from([...raw.subarray(0,p),...str(name),...raw.subarray(p+2+old)])}
+ else raw=Uint8Array.from([10,0,0,...tag(9,'capes',0,0,0,0,0),...tag(3,'presetCape',0,0,0,0),...tag(3,'customCape',255,255,255,255),...tag(9,'skins',0,0,0,0,0),...tag(8,'username',...str(name)),...tag(3,'presetSkin',0,0,0,0),...tag(3,'customSkin',255,255,255,255),0]);
+ localStorage.setItem(k,u8b64(await gzip(raw,1)));return true}
+async function launchEagler(url){if(egl.busy)return;egl.busy=true;setStatus('connecting','Unpacking the Eaglercraft client… (a few seconds the first time)');
+ try{egl.html=egl.html||await eaglerSource();const h=egl.html,i=h.indexOf('<head>');if(i<0||i>4096)throw new Error('unrecognised Eaglercraft build');
+  try{await seedProfile(S.user)}catch(e){}
+  // Injected first thing in <head>: merges our launch options into the build's own window.eaglercraftXOpts and skips its 5 s "launching…" countdown.
+  const hook='<script>(function(){var O='+JSON.stringify({joinServer:url}).replace(/</g,'\\u003c')+',v;Object.defineProperty(window,"eaglercraftXOpts",{configurable:true,get:function(){return v},set:function(x){if(x&&typeof x=="object")Object.assign(x,O);Object.defineProperty(window,"eaglercraftXOpts",{value:x,writable:true,configurable:true})}});addEventListener("load",function(){setTimeout(function(){var b=document.getElementById("skipCountdown");if(b)b.click()},0)})})()<\/script>';
+  const w=document.createElement('div'),f=document.createElement('iframe'),bk=document.createElement('button');
+  w.id='egl';bk.id='eglBack';bk.textContent=egl.BACK;f.allow='autoplay; fullscreen; microphone; clipboard-read; clipboard-write';f.allowFullscreen=true;
+  bk.onclick=()=>{if(bk.textContent==egl.BACK){bk.textContent='Click again to leave';setTimeout(()=>{bk.textContent=egl.BACK},3000)}else leaveEagler()};
+  f.onload=()=>{try{f.contentWindow.focus()}catch(e){}};
+  f.srcdoc=h.slice(0,i+6)+hook+h.slice(i+6);w.append(f,bk);document.body.append(w);
+  egl.on=true;egl.was=playing;egl.hud=$('hud').style.display;playing=false;for(const k in keys)keys[k]=false;document.exitPointerLock();show(null);$('hud').style.display='none';
+  setStatus('online','Eaglercraft running — joining '+url)}
+ catch(e){setStatus('error','Could not start Eaglercraft: '+(e&&e.message||e))}
+ finally{egl.busy=false}}
+function leaveEagler(){const w=$('egl');if(w)w.remove();egl.on=false;playing=egl.was;$('hud').style.display=egl.hud;show('mp');setStatus('offline','Left Eaglercraft')}
+// ---- WebGL ----
+const cv=$('c'),gl=cv.getContext('webgl')||cv.getContext('experimental-webgl');
+if(!gl){$('wasm').textContent='WebGL is not available in this browser.';$('bPlay').disabled=true;throw new Error('no WebGL')}
+function prog(vs,fs){const p=gl.createProgram();for(const[t,s]of[[gl.VERTEX_SHADER,vs],[gl.FRAGMENT_SHADER,fs]]){const h=gl.createShader(t);gl.shaderSource(h,s);gl.compileShader(h);if(!gl.getShaderParameter(h,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(h));gl.attachShader(p,h)}
+ ['p','u','s'].forEach((n,i)=>gl.bindAttribLocation(p,i,n));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p}
+const P1=prog('attribute vec3 p;attribute vec2 u;attribute float s;uniform mat4 m;varying vec2 vu;varying float vs,vd;void main(){gl_Position=m*vec4(p,1.);vu=u;vs=s;vd=gl_Position.w;}',
+ 'precision mediump float;uniform sampler2D t;uniform float fd;varying vec2 vu;varying float vs,vd;void main(){vec4 c=texture2D(t,vu);gl_FragColor=vec4(mix(c.rgb*vs,vec3(.55,.75,.95),clamp((vd-fd*.6)/(fd*.4),0.,1.)),1.);}');
+const P2=prog('attribute vec3 p;uniform mat4 m;void main(){gl_Position=m*vec4(p,1.);}','precision mediump float;uniform vec4 c;void main(){gl_FragColor=c;}');
+const U1={m:gl.getUniformLocation(P1,'m'),fd:gl.getUniformLocation(P1,'fd')},U2={m:gl.getUniformLocation(P2,'m'),c:gl.getUniformLocation(P2,'c')};
+const mul=(a,b)=>{const o=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s}return o};
+const rotX=a=>{const c=Math.cos(a),s=Math.sin(a);return[1,0,0,0,0,c,s,0,0,-s,c,0,0,0,0,1]},rotY=a=>{const c=Math.cos(a),s=Math.sin(a);return[c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1]},tr=(x,y,z)=>[1,0,0,0,0,1,0,0,0,0,1,0,x,y,z,1];
+const persp=(fv,a,n,f)=>{const q=1/Math.tan(fv/2);return[q/a,0,0,0,0,q,0,0,0,0,(f+n)/(n-f),-1,0,0,2*f*n/(n-f),0]};
+// ---- textures (procedural, S.tex x S.tex per tile) ----
+const hash=(x,z)=>{let h=Math.imul(x,374761393)+Math.imul(z,668265263)|0;h=Math.imul(h^(h>>>13),1274126177);return(h^(h>>>16))>>>0};
+const atlas=gl.createTexture();
+function buildAtlas(){const T=S.tex,c=document.createElement('canvas');c.width=T*8;c.height=T;const x=c.getContext('2d'),im=x.createImageData(c.width,T);
+ for(let t=0;t<7;t++)for(let py=0;py<T;py++)for(let px=0;px<T;px++){const u=px/T,v=py/T,n=(hash(px*7+t*131,py*13+t)&31)-16;let C;
+  if(t==0||(t==1&&v<.25))C=[84,150,60];else if(t==1||t==2)C=[134,96,67];else if(t==3)C=[125,125,125];else if(t==4)C=[219,207,142];
+  else if(t==5)C=(u>.42&&u<.58&&v>.35&&v<.6)?[220,220,220]:(v>.4&&v<.5)?[70,40,15]:[150,100,40];else C=(v*4%1<.12)?[110,85,50]:[160,130,80];
+  const i=(py*c.width+t*T+px)*4;im.data[i]=C[0]+n;im.data[i+1]=C[1]+n;im.data[i+2]=C[2]+n;im.data[i+3]=255}
+ x.putImageData(im,0,0);gl.bindTexture(gl.TEXTURE_2D,atlas);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
+ for(const[k,v]of[[gl.TEXTURE_MIN_FILTER,gl.NEAREST],[gl.TEXTURE_MAG_FILTER,gl.NEAREST],[gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE],[gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE]])gl.texParameteri(gl.TEXTURE_2D,k,v)}
+buildAtlas();
+// ---- world (terrain: Rust/WASM core if loaded, identical JS fallback otherwise) ----
+let wasm=null;
+const vn=(x,z)=>{const ix=Math.floor(x),iz=Math.floor(z),fx=x-ix,fz=z-iz,sx=fx*fx*(3-2*fx),sz=fz*fz*(3-2*fz),r=(a,b)=>hash(a,b)/4294967296,a=r(ix,iz),b=r(ix+1,iz),c=r(ix,iz+1),d=r(ix+1,iz+1);return a+(b-a)*sx+(c-a)*sz+(a-b-c+d)*sx*sz};
+const height=(x,z)=>Math.floor(14+(vn(x/28,z/28)*.7+vn(x/9,z/9)*.3)*20);
+const gen=(x,y,z,h)=>y>h?(y==h+1&&h>14&&hash(x+99,z-77)%250==0?5:0):y==h?(h<=14?4:1):y>=h-3?(h<=14?4:2):3;
+(async()=>{try{const b=WASM_B64?Uint8Array.from(atob(WASM_B64),c=>c.charCodeAt(0)):await(await fetch('rustcraft_core.wasm')).arrayBuffer();
+ const w=(await WebAssembly.instantiate(b,{})).instance.exports;if(w.rc_version()!=1)throw 0;wasm=w}catch(e){}
+ $('wasm').textContent='Terrain generator: '+(wasm?'Rust/WebAssembly':'JavaScript fallback (build with build.sh to embed the Rust core)')})();
+const chunks=new Map(),ed=new Map(),key=(x,z)=>(x+32768)*65536+z+32768;
+function getBlock(x,y,z){if(y<0)return 3;if(y>=H)return 0;const c=chunks.get(key(x>>4,z>>4));return c?c.b[((x&15)*16+(z&15))*H+y]:gen(x,y,z,height(x,z))}
+function mk(cx,cz){let b;if(wasm)b=new Uint8Array(wasm.memory.buffer,wasm.rc_fill(cx,cz),16*16*H).slice();
+ else{b=new Uint8Array(16*16*H);for(let x=0;x<16;x++)for(let z=0;z<16;z++){const wx=cx*16+x,wz=cz*16+z,h=height(wx,wz);for(let y=0;y<H;y++)b[(x*16+z)*H+y]=gen(wx,y,wz,h)}}
+ const e=ed.get(key(cx,cz));if(e)for(const[i,id]of e)b[i]=id;return{cx,cz,b,buf:null,n:0,dirty:true,ch:[]}}
+function setBlock(x,y,z,id){if(y<1||y>=H)return;const cx=x>>4,cz=z>>4,c=chunks.get(key(cx,cz));if(!c)return;const lx=x&15,lz=z&15,i=(lx*16+lz)*H+y;c.b[i]=id;
+ let e=ed.get(key(cx,cz));if(!e)ed.set(key(cx,cz),e=new Map());e.set(i,id);c.dirty=true;
+ for(const[dx,dz]of[[1,0],[-1,0],[0,1],[0,-1]])if((lx==0&&dx<0)||(lx==15&&dx>0)||(lz==0&&dz<0)||(lz==15&&dz>0)){const n=chunks.get(key(cx+dx,cz+dz));if(n)n.dirty=true}}
+const F=[[1,0,0,[1,0,0,1,1,0,1,1,1,1,0,1],.8],[-1,0,0,[0,0,1,0,1,1,0,1,0,0,0,0],.8],[0,1,0,[0,1,0,0,1,1,1,1,1,1,1,0],1],[0,-1,0,[0,0,1,0,0,0,1,0,0,1,0,1],.5],[0,0,1,[1,0,1,1,1,1,0,1,1,0,0,1],.65],[0,0,-1,[0,0,0,0,1,0,1,1,0,1,0,0],.65]];
+const Q=[0,1,2,0,2,3],UV=[0,1,0,0,1,0,1,1],CUBE=[];for(const f of F)for(const k of Q)for(let j=0;j<3;j++)CUBE.push(f[3][k*3+j]*1.01-.005);
+function mesh(c){const v=[],ox=c.cx*16,oz=c.cz*16;c.ch=[];
+ for(let x=0;x<16;x++)for(let z=0;z<16;z++)for(let y=0;y<H;y++){const id=c.b[(x*16+z)*H+y];if(!id)continue;const wx=ox+x,wz=oz+z;if(id==5)c.ch.push(wx,y,wz);
+  for(let f=0;f<6;f++){const a=F[f];if(getBlock(wx+a[0],y+a[1],wz+a[2]))continue;const t=id==1?(f==2?0:f==3?2:1):id;
+   for(const k of Q)v.push(wx+a[3][k*3],y+a[3][k*3+1],wz+a[3][k*3+2],(t+(UV[k*2]?.995:.005))/8,UV[k*2+1]?.995:.005,a[4])}}
+ c.n=v.length/6;if(!c.buf)c.buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,c.buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(v),gl.STATIC_DRAW);c.dirty=false}
+let offs=[];function wantRD(){offs=[];const r=S.rd;for(let dx=-r;dx<=r;dx++)for(let dz=-r;dz<=r;dz++)if(dx*dx+dz*dz<=r*r)offs.push([dx,dz,dx*dx+dz*dz]);offs.sort((a,b)=>a[2]-b[2])}
+wantRD();
+// ---- player ----
+const pl={x:8.5,y:40,z:8.5,vy:0,yaw:0,pitch:0,g:false},keys={},BL=[1,2,3,4,5,6],NM=['Grass','Dirt','Stone','Sand','Chest','Planks'];let sel=0;
+const solid=(x,y,z)=>getBlock(Math.floor(x),Math.floor(y),Math.floor(z))>0;
+const hit=(x,y,z)=>{for(const dx of[-.3,.3])for(const dz of[-.3,.3])for(const dy of[.05,.9,1.75])if(solid(x+dx,y+dy,z+dz))return true;return false};
+function step(dt){const f=(keys.KeyW?1:0)-(keys.KeyS?1:0),r=(keys.KeyD?1:0)-(keys.KeyA?1:0),sp=keys.ShiftLeft?6.5:4.3,sy=Math.sin(pl.yaw),cy=Math.cos(pl.yaw);
+ let vx=(-sy*f+cy*r),vz=(-cy*f-sy*r);const l=Math.hypot(vx,vz)||1;vx=vx/l*sp*(f||r?1:0);vz=vz/l*sp*(f||r?1:0);
+ if(keys.Space&&pl.g){pl.vy=8.5;pl.g=false}pl.vy-=28*dt;
+ if(!hit(pl.x+vx*dt,pl.y,pl.z))pl.x+=vx*dt;if(!hit(pl.x,pl.y,pl.z+vz*dt))pl.z+=vz*dt;
+ const ny=pl.y+pl.vy*dt;if(hit(pl.x,ny,pl.z)){if(pl.vy<0)pl.g=true;pl.vy=0}else{pl.y=ny;pl.g=false}
+ if(pl.y<-20){pl.y=height(8,8)+3;pl.x=pl.z=8.5;pl.vy=0}}
+function ray(){const d=[-Math.sin(pl.yaw)*Math.cos(pl.pitch),Math.sin(pl.pitch),-Math.cos(pl.yaw)*Math.cos(pl.pitch)];let x=pl.x,y=pl.y+1.62,z=pl.z,last=null;
+ for(let i=0;i<120;i++){const b=[Math.floor(x),Math.floor(y),Math.floor(z)];if(getBlock(b[0],b[1],b[2])>0)return{b,p:last};last=b;x+=d[0]*.05;y+=d[1]*.05;z+=d[2]*.05}return null}
+// ---- input ----
+function lock(){if(!playing||scr||chatOpen)return;try{const r=cv.requestPointerLock();if(r&&r.catch)r.catch(()=>{})}catch(e){}}
+function startGame(withLock){if(!started){started=true;pl.y=height(8,8)+3}playing=true;show(null);$('hud').style.display='block';$('bPlay').textContent='Resume';if(withLock!==false)lock();else say('Click the game to capture the mouse.','sys')}
+$('bPlay').onclick=()=>startGame(true);
+document.addEventListener('pointerlockchange',()=>{if(playing&&!document.pointerLockElement&&!chatOpen&&!scr)show('menu')});
+document.addEventListener('mousemove',e=>{if(document.pointerLockElement==cv){pl.yaw-=e.movementX*.0025;pl.pitch=cl(pl.pitch-e.movementY*.0025,-1.55,1.55)}});
+cv.oncontextmenu=e=>e.preventDefault();
+cv.onmousedown=e=>{if(document.pointerLockElement!=cv)return lock();const r=ray();if(!r)return;
+ if(e.button==0)setBlock(r.b[0],r.b[1],r.b[2],0);else if(e.button==2&&r.p){setBlock(r.p[0],r.p[1],r.p[2],BL[sel]);if(hit(pl.x,pl.y,pl.z))setBlock(r.p[0],r.p[1],r.p[2],0)}};
+document.addEventListener('wheel',e=>{if(playing&&!scr){sel=(sel+(e.deltaY>0?1:5))%6;bar()}});
+document.addEventListener('keydown',e=>{if(chatOpen||egl.on)return;
+ if(scr){if(e.key=='Escape'&&scr!='menu')show('menu');return}
+ if(e.code=='KeyT'||e.code=='Enter'){e.preventDefault();return openChat()}
+ if(/^Digit[1-6]$/.test(e.code)){sel=+e.code[5]-1;bar()}keys[e.code]=true;if(e.code=='Space')e.preventDefault()});
+document.addEventListener('keyup',e=>{keys[e.code]=false});
+const bar=()=>{$('bar').innerHTML=NM.map((n,i)=>'<div'+(i==sel?' class="s"':'')+'>'+(i+1)+' '+n+'</div>').join('')};bar();
+// ---- render loop ----
+const rgb=h=>[1,3,5].map(i=>parseInt(h.substr(i,2),16)/255);
+let last=performance.now(),fr=0,fps=0,acc=0;
+function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/1000);last=now;if(!playing)return;
+ if(cv.width!=innerWidth||cv.height!=innerHeight){cv.width=innerWidth;cv.height=innerHeight}
+ if(!scr)step(dt);fr++;acc+=dt;if(acc>=.5){fps=Math.round(fr/acc);fr=0;acc=0}
+ const pcx=Math.floor(pl.x)>>4,pcz=Math.floor(pl.z)>>4,t0=performance.now();
+ for(const[dx,dz]of offs){const k=key(pcx+dx,pcz+dz);let c=chunks.get(k);if(!c){c=mk(pcx+dx,pcz+dz);chunks.set(k,c)}if(c.dirty)mesh(c);if(performance.now()-t0>8)break}
+ if(fr%30==0){const lim=(S.rd+2)**2;for(const[k,c]of chunks)if((c.cx-pcx)**2+(c.cz-pcz)**2>lim){if(c.buf)gl.deleteBuffer(c.buf);chunks.delete(k)}}
+ gl.viewport(0,0,cv.width,cv.height);gl.clearColor(.55,.75,.95,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);
+ const V=mul(rotX(-pl.pitch),mul(rotY(-pl.yaw),tr(-pl.x,-(pl.y+1.62),-pl.z))),M=mul(persp(Math.min(S.fov,175)*Math.PI/180,cv.width/cv.height,.05,S.rd*16+32),V);
+ gl.useProgram(P1);gl.uniformMatrix4fv(U1.m,false,M);gl.uniform1f(U1.fd,S.rd*16);gl.bindTexture(gl.TEXTURE_2D,atlas);gl.enableVertexAttribArray(0);gl.enableVertexAttribArray(1);gl.enableVertexAttribArray(2);
+ const lim2=(S.rd+1)**2;for(const c of chunks.values()){if(!c.n||(c.cx-pcx)**2+(c.cz-pcz)**2>lim2)continue;gl.bindBuffer(gl.ARRAY_BUFFER,c.buf);
+  gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(1,2,gl.FLOAT,false,24,12);gl.vertexAttribPointer(2,1,gl.FLOAT,false,24,20);gl.drawArrays(gl.TRIANGLES,0,c.n)}
+ if(S.chest){const a=[];for(const c of chunks.values())for(let i=0;i<c.ch.length;i+=3){const x=c.ch[i],y=c.ch[i+1],z=c.ch[i+2];if((x-pl.x)**2+(z-pl.z)**2>4096)continue;for(let j=0;j<108;j+=3)a.push(x+CUBE[j],y+CUBE[j+1],z+CUBE[j+2])}
+  if(a.length){const b=gl.createBuffer(),c=rgb(S.color);gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(a),gl.STREAM_DRAW);
+   gl.useProgram(P2);gl.uniformMatrix4fv(U2.m,false,M);gl.uniform4f(U2.c,c[0],c[1],c[2],.5);gl.disableVertexAttribArray(1);gl.disableVertexAttribArray(2);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+   gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.drawArrays(gl.TRIANGLES,0,a.length/3);gl.depthMask(true);gl.disable(gl.BLEND);gl.deleteBuffer(b)}}
+ $('top').textContent='RustCraft Web Beta 0.1  '+fps+' fps\nXYZ '+pl.x.toFixed(1)+' '+pl.y.toFixed(1)+' '+pl.z.toFixed(1)+'\nChunks '+chunks.size+'  RD '+S.rd+'  FOV '+S.fov+'\nTerrain: '+(wasm?'Rust/WASM':'JS')}
+requestAnimationFrame(loop);
+</script>
+<script id="eagler-gz" type="text/plain"></script></body></html>
