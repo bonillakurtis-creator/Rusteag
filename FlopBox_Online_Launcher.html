@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10131a">
+<title>FlopBox — Online</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;background:#10131a;color:#f4f6fb;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  body{display:flex;flex-direction:column}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#171c26;border-bottom:1px solid #303847}
+  strong{font-size:16px;letter-spacing:.3px}
+  .actions{display:flex;gap:8px;flex-wrap:wrap}
+  a{color:#fff;text-decoration:none;background:#34445f;padding:9px 12px;border-radius:9px;font-size:13px;font-weight:650}
+  a.primary{background:#5479d8}
+  main{position:relative;flex:1;min-height:0}
+  iframe{border:0;width:100%;height:100%;display:block;background:#080a0e}
+  .note{position:absolute;left:12px;right:12px;bottom:12px;margin:auto;max-width:520px;padding:10px 12px;border-radius:10px;background:#171c26eF;border:1px solid #303847;color:#cbd3e1;font-size:12px;line-height:1.4;text-align:center;pointer-events:none}
+</style>
+</head>
+<body>
+<header>
+  <strong>FlopBox · Online</strong>
+  <div class="actions">
+    <a href="https://f.playglovebox.com/" target="_blank" rel="noopener">Open official game ↗</a>
+    <a class="primary" href="https://playglovebox.com/" target="_blank" rel="noopener">Glovebox site</a>
+  </div>
+</header>
+<main>
+  <iframe src="https://f.playglovebox.com/" title="FlopBox" allow="fullscreen; autoplay; gamepad; accelerometer; gyroscope; xr-spatial-tracking" allowfullscreen></iframe>
+  <div class="note">If the game area stays blank, the game host may block embedding. Tap “Open official game” above.</div>
+</main>
+</body>
+</html>
