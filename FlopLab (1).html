@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>FlopLab</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#0b0e14;font:12px system-ui,sans-serif;color:#d8dee9}
+canvas{display:block;width:100%;height:100%}
+#cross{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#fff8;pointer-events:none}
+#hud{white-space:pre;position:fixed;left:10px;top:8px;pointer-events:none;line-height:1.5;text-shadow:0 1px 2px #000}
+#msg{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#000a;padding:8px 14px;border-radius:8px;pointer-events:none}
+#panel{position:fixed;right:0;top:0;bottom:0;width:230px;overflow:auto;background:#10141cee;border-left:1px solid #2a3140;padding:8px}
+#panel button{margin:2px;padding:5px 8px;background:#1d2533;color:#d8dee9;border:1px solid #33405a;border-radius:5px;cursor:pointer}
+#panel button:hover{background:#2b3a55}
+#panel label{display:block;margin-top:6px}#panel input[type=range]{width:100%}
+h4{margin:10px 0 2px;color:#7aa2f7}
+#tog{position:fixed;right:238px;top:8px;z-index:5;background:#1d2533;color:#d8dee9;border:1px solid #33405a;border-radius:5px;padding:5px 9px;cursor:pointer}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+</head><body>
+<canvas id="c"></canvas><div id="cross"></div><div id="hud"></div><div id="msg">Loading physics engine…</div><div id="panel"></div><button id="tog">✕ Close</button>
+<script type="module">
+import * as THREE from 'three';
+import * as RM from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/+esm';
+const msg=document.getElementById('msg');
+window.onerror=(m)=>{msg.textContent='Error: '+m};
+const RAPIER=RM.default||RM; await RAPIER.init();
+
+// ---------- settings ----------
+const S={stand:true,gravity:-9.81,mass:1,stiff:3,damp:1,strength:0,time:1,coll:.15,part:1,sens:1,impulse:6,xray:false,fx:true,blood:true,debug:false,paused:false};
+const world=new RAPIER.World({x:0,y:S.gravity,z:0});
+try{world.integrationParameters.numSolverIterations=8}catch(e){}
+
+// ---------- renderer ----------
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x2a2f38);scene.fog=new THREE.Fog(0x2a2f38,30,110);
+const camera=new THREE.PerspectiveCamera(65,1,.05,200);camera.rotation.order='YXZ';
+scene.add(new THREE.HemisphereLight(0x9fb4e0,0x202026,.9));
+const sun=new THREE.DirectionalLight(0xfff1dd,2.4);sun.position.set(8,16,6);sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-20,right:20,top:20,bottom:-20,near:1,far:50});sun.shadow.bias=-.0004;scene.add(sun);
+function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
+addEventListener('resize',resize);resize();
+
+// ---------- environment ----------
+const tc=document.createElement('canvas');tc.width=tc.height=256;{const g=tc.getContext('2d');g.fillStyle='#5d6470';g.fillRect(0,0,256,256);g.fillStyle='#6a7280';g.fillRect(0,0,128,128);g.fillRect(128,128,128,128)}
+const gt=new THREE.CanvasTexture(tc);gt.wrapS=gt.wrapT=THREE.RepeatWrapping;gt.repeat.set(60,60);gt.colorSpace=THREE.SRGBColorSpace;
+function addStatic(w,h,d,x,y,z,rz,mat){
+ const bd=RAPIER.RigidBodyDesc.fixed().setTranslation(x,y,z);const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,rz||0));bd.setRotation({x:q.x,y:q.y,z:q.z,w:q.w});
+ const b=world.createRigidBody(bd);world.createCollider(RAPIER.ColliderDesc.cuboid(w/2,h/2,d/2).setFriction(1).setRestitution(0),b);
+ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.quaternion.copy(q);m.castShadow=m.receiveShadow=true;scene.add(m);return m}
+addStatic(120,1,120,0,-.5,0,0,new THREE.MeshStandardMaterial({map:gt,roughness:.9}));
+const sm=new THREE.MeshStandardMaterial({color:0x4a5368,roughness:.7,metalness:.2});
+addStatic(5,.4,4,-6,.9,-2,.35,sm);addStatic(3,2,3,6,1,-3,0,sm);addStatic(.5,2.5,8,10,1.25,2,0,sm);
+const wmat=new THREE.MeshStandardMaterial({color:0x59606c,roughness:.9});addStatic(50,8,1,0,4,-25,0,wmat);addStatic(50,8,1,0,4,25,0,wmat);addStatic(1,8,50,-25,4,0,0,wmat);addStatic(1,8,50,25,4,0,0,wmat);
+
+// ---------- ragdoll definition ----------
+// [name,shape(b=box,s=sphere,c=capsule),dims,x,y,z,mass]
+const D=[['pelvis','b',[.17,.09,.1],0,1,0,10],['chest','b',[.19,.2,.11],0,1.28,0,16],['neck','c',[.03,.045],0,1.5,0,1.5],['head','s',[.12],0,1.64,0,5]];
+const X=[['uarm','c',[.11,.05],.27,1.34,0,2.2],['farm','c',[.1,.045],.27,1.08,0,1.5],['hand','s',[.05],.27,.88,0,.5],
+ ['thigh','c',[.15,.07],.1,.72,0,7],['shin','c',[.17,.055],.1,.33,0,3.5],['foot','b',[.05,.04,.12],.1,.06,.05,1]];
+for(const s of[-1,1])for(const p of X)D.push([p[0]+(s<0?'L':'R'),p[1],p[2],p[3]*s,p[4],p[5],p[6]]);
+// [parent,child,type(s=ball,r=hinge),x,y,z,limits]
+const J=[['pelvis','chest','s',0,1.12,0],['chest','neck','s',0,1.46,0],['neck','head','s',0,1.54,0]];
+for(const s of[-1,1]){const n=s<0?'L':'R';
+ J.push(['chest','uarm'+n,'s',.27*s,1.46,0],['uarm'+n,'farm'+n,'r',.27*s,1.2,0,[-2.4,0]],['farm'+n,'hand'+n,'s',.27*s,.94,0],
+  ['pelvis','thigh'+n,'s',.1*s,.93,0],['thigh'+n,'shin'+n,'r',.1*s,.5,0,[0,2.4]],['shin'+n,'foot'+n,'s',.1*s,.12,0])}
+
+// bone / X-ray assets
+const G={box:new THREE.BoxGeometry(1,1,1),sph:new THREE.SphereGeometry(1,12,10),cyl:new THREE.CylinderGeometry(1,1,1,8),tor:new THREE.TorusGeometry(.5,.04,6,16)};
+const bm=new THREE.MeshBasicMaterial({color:0xefe9d2,transparent:true,opacity:.95,depthTest:false});
+const jm=new THREE.MeshBasicMaterial({color:0xffc24a,depthTest:false});
+function bone(g,geo,x,y,z,sx,sy,sz,rx=0,m=bm){const o=new THREE.Mesh(geo,m);o.position.set(x,y,z);o.scale.set(sx,sy,sz);o.rotation.x=rx;o.renderOrder=5;g.add(o)}
+function addBones(p){const g=new THREE.Group();g.visible=S.xray;const n=p.n.replace(/[LR]$/,'');
+ if(n=='head'){bone(g,G.sph,0,.01,0,.095,.105,.1);bone(g,G.box,0,-.08,.04,.07,.03,.06)}
+ else if(n=='neck')bone(g,G.cyl,0,0,0,.02,.14,.02);
+ else if(n=='chest'){for(let i=0;i<5;i++)bone(g,G.box,0,-.15+i*.075,-.04,.03,.04,.03);for(let i=0;i<4;i++)bone(g,G.tor,0,-.08+i*.065,0,.36,.24,.2,Math.PI/2);bone(g,G.box,0,.03,.1,.03,.2,.015)}
+ else if(n=='pelvis'){bone(g,G.box,0,0,-.02,.26,.08,.1);bone(g,G.box,0,.01,-.07,.05,.07,.03)}
+ else if(['uarm','farm','thigh','shin'].includes(n))bone(g,G.cyl,0,0,0,.018,p.d[2][0]*2+.06,.018);
+ else if(n=='hand')bone(g,G.box,0,0,0,.05,.04,.08);else if(n=='foot')bone(g,G.box,0,0,.01,.07,.03,.18);
+ p.mesh.add(g);p.g=g;return g}
+
+// ---------- ragdolls ----------
+const ragdolls=[],bodyMap=new Map();let sel=null;
+const Yv=new THREE.Vector3(0,1,0);
+function spawn(x,y,z,yaw=0){
+ const r={sf:0,fallen:false,mass:D.reduce((a,d)=>a+d[6],0),vol:100,o2:100,hr:1.2,tone:1,par:false,wounds:[],org:{},organs:[],phase:0,state:'Conscious',parts:{},list:[],joints:[],mat:new THREE.MeshStandardMaterial({color:0xf2c200,roughness:.5,metalness:.05})};
+ const qy=new THREE.Quaternion().setFromAxisAngle(Yv,yaw);
+ for(const d of D){
+  const o=new THREE.Vector3(d[3],d[4],d[5]).applyQuaternion(qy);
+  const body=world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(x+o.x,y+o.y,z+o.z).setRotation({x:qy.x,y:qy.y,z:qy.z,w:qy.w}).setLinearDamping(.1).setAngularDamping(.8));
+  const cd=d[1]=='b'?RAPIER.ColliderDesc.cuboid(...d[2]):d[1]=='s'?RAPIER.ColliderDesc.ball(d[2][0]):RAPIER.ColliderDesc.capsule(...d[2]);
+  const col=world.createCollider(cd.setMass(d[6]*S.mass).setFriction(.9).setRestitution(S.coll),body);
+  const geo=d[1]=='b'?new THREE.BoxGeometry(d[2][0]*2,d[2][1]*2,d[2][2]*2):d[1]=='s'?new THREE.SphereGeometry(d[2][0],20,14):new THREE.CapsuleGeometry(d[2][1],d[2][0]*2,6,14);
+  const mesh=new THREE.Mesh(geo,r.mat);mesh.castShadow=mesh.receiveShadow=true;scene.add(mesh);
+  const t=body.translation();
+  const p={I0:d[6]*Math.pow(d[1]=='b'?Math.max(...d[2]):d[1]=='s'?d[2][0]:d[2][0]+d[2][1],2)/3,n:d[0],d,body,col,mesh,r,pv:new THREE.Vector3(),cd:0,home:[t.x,t.y,t.z,qy.x,qy.y,qy.z,qy.w]};
+  r.parts[d[0]]=p;r.list.push(p);bodyMap.set(body.handle,p);addBones(p)}
+ for(const j of J){
+  const a=r.parts[j[0]],b=r.parts[j[1]],la={x:j[3]-a.d[3],y:j[4]-a.d[4],z:j[5]-a.d[5]},lb={x:j[3]-b.d[3],y:j[4]-b.d[4],z:j[5]-b.d[5]};
+  let jd;if(j[2]=='s')jd=RAPIER.JointData.spherical(la,lb);else{jd=RAPIER.JointData.revolute(la,lb,{x:1,y:0,z:0});jd.limitsEnabled=true;jd.limits=j[6]}
+  const jt=world.createImpulseJoint(jd,a.body,b.body,true);if(jt.setContactsEnabled)jt.setContactsEnabled(false);r.joints.push({a,b});
+  bone(b.g,G.sph,lb.x,lb.y,lb.z,.03,.03,.03,0,jm)}
+ buildAnatomy(r);addDeco(r);setXray(r);ragdolls.push(r);select(r);return r}
+function select(r){sel=r;for(const q of ragdolls)q.mat.emissive.setHex(q==r?0x1a3f7a:0)}
+function setXray(r){r.mat.transparent=S.xray;r.mat.opacity=S.xray?.18:1;r.mat.depthWrite=!S.xray;r.mat.needsUpdate=true;for(const p of r.list)p.g.visible=S.xray;for(const m of r.deco||[])m.visible=!S.xray}
+function del(r){if(!r)return;for(const p of r.list){bodyMap.delete(p.body.handle);world.removeRigidBody(p.body);scene.remove(p.mesh);p.mesh.geometry.dispose()}
+ r.mat.dispose();ragdolls.splice(ragdolls.indexOf(r),1);if(grab&&grab.p.r==r)grab=null;if(sel==r){sel=ragdolls[ragdolls.length-1]||null;if(sel)select(sel)}if(!sel)auto=false}
+function resetRagdoll(r){if(!r)return;heal(r);for(const p of r.list){const h=p.home;p.body.setTranslation({x:h[0],y:h[1],z:h[2]},true);p.body.setRotation({x:h[3],y:h[4],z:h[5],w:h[6]},true);p.body.setLinvel({x:0,y:0,z:0},true);p.body.setAngvel({x:0,y:0,z:0},true)}}
+function resetScene(){while(ragdolls.length)del(ragdolls[0]);for(const d of drums.slice()){scene.remove(d.m);world.removeRigidBody(d.b);drumMap.delete(d.b.handle)}drums.length=0;spawn(-1.6,.3,0,0);spawn(1.6,.3,0,0);spawn(0,.3,0,0);spawnDrum({x:4.5,y:0,z:0})}
+function spawnMany(n=5){for(let i=0;i<n;i++)spawn((Math.random()-.5)*8,2+i*1.2,(Math.random()-.5)*6,Math.random()*6.28)}
+
+// ---------- active-ragdoll drive (joint stiffness / damping / upright strength) ----------
+const Q1=new THREE.Quaternion(),Q2=new THREE.Quaternion(),V=new THREE.Vector3(),W=new THREE.Vector3(),V2=new THREE.Vector3();
+function drive(r){for(const p of r.list){p.body.resetForces(true);p.body.resetTorques(true)}const sf=r.par?0:r.sf*r.tone;
+ for(const j of r.joints){const a=j.a.body,b=j.b.body,qa=a.rotation(),qb=b.rotation();
+  Q1.set(qa.x,qa.y,qa.z,qa.w);Q2.set(qb.x,qb.y,qb.z,qb.w);
+  const rel=Q1.clone().invert().multiply(Q2),sg=rel.w<0?-1:1,ang=2*Math.acos(Math.min(1,rel.w*sg)),s=Math.sqrt(Math.max(0,1-rel.w*rel.w)),I=Math.min(j.a.I0,j.b.I0)*S.mass,k0=Math.min(600,S.stiff*r.tone*((r.par&&/thigh|shin|foot/.test(j.b.n))?0:1)*10+300*sf),dr=Math.min(60,2*Math.sqrt(k0)*(.4+.15*S.damp+.5*sf)+2*S.damp);
+  V.set(0,0,0);if(s>1e-4)V.set(rel.x*sg/s,rel.y*sg/s,rel.z*sg/s).multiplyScalar(ang*k0*I).applyQuaternion(Q1);
+  const wa=a.angvel(),wb=b.angvel();W.set(wb.x-wa.x,wb.y-wa.y,wb.z-wa.z).multiplyScalar(dr*I);V.add(W);
+  b.addTorque({x:-V.x,y:-V.y,z:-V.z},true);a.addTorque({x:V.x,y:V.y,z:V.z},true)}
+ if(S.strength>0||sf>.01)for(const n of['pelvis','chest','head']){const p=r.parts[n],q=p.body.rotation(),av=p.body.angvel(),dc=-sf*p.I0*S.mass*20;p.body.addTorque({x:av.x*dc,y:av.y*dc,z:av.z*dc},true);
+  V.set(0,1,0).applyQuaternion(Q1.set(q.x,q.y,q.z,q.w)).cross(Yv).multiplyScalar((S.strength*r.tone*20+120*sf)*p.I0*S.mass);p.body.addTorque({x:V.x,y:V.y,z:V.z},true)}
+ if(sf>.01){const pb=r.parts.pelvis.body,fl=r.parts.footL.body,fr=r.parts.footR.body,pt=pb.translation(),a=fl.translation(),b=fr.translation(),v=pb.linvel(),M=r.mass*S.mass,g=-S.gravity;
+  const fx=-(30*(pt.x-(a.x+b.x)/2)+8*v.x)*M*.5*sf,fz=-(30*(pt.z-(a.z+b.z)/2)+8*v.z)*M*.5*sf,fy=sf*(.7*M*g+Math.max(-200,Math.min(600,500*(1-pt.y)))-120*v.y);
+  pb.addForce({x:fx,y:fy,z:fz},true);fl.addForce({x:-fx/2,y:-fy/2,z:-fz/2},true);fr.addForce({x:-fx/2,y:-fy/2,z:-fz/2},true)}}
+
+// ---------- particles (pooled) ----------
+const N=5000,pp=new Float32Array(N*3),pc=new Float32Array(N*3),pvel=new Float32Array(N*3),pl=new Float32Array(N);let ptr=0;
+for(let i=0;i<N;i++)pp[i*3+1]=-1000;
+const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pp,3));pg.setAttribute('color',new THREE.BufferAttribute(pc,3));
+const pts=new THREE.Points(pg,new THREE.PointsMaterial({size:.07,vertexColors:true,transparent:true,depthWrite:false}));pts.frustumCulled=false;scene.add(pts);
+function emit(x,y,z,n,r,g,b,sp){for(let k=0;k<n;k++){const i=ptr=(ptr+1)%N,i3=i*3,j=.7+Math.random()*.6;
+ pp[i3]=x;pp[i3+1]=y;pp[i3+2]=z;pvel[i3]=(Math.random()-.5)*sp;pvel[i3+1]=Math.random()*sp*.8+1;pvel[i3+2]=(Math.random()-.5)*sp;
+ pc[i3]=r*j;pc[i3+1]=g*j;pc[i3+2]=b*j;pl[i]=2+Math.random()*5}}
+function updParticles(dt){for(let i=0;i<N;i++){if(pl[i]<=0)continue;pl[i]-=dt;const i3=i*3;
+ if(pl[i]<=0){pp[i3+1]=-1000;continue}
+ if(pp[i3+1]>.02||pvel[i3+1]>0){pvel[i3+1]-=9.8*dt;pp[i3]+=pvel[i3]*dt;pp[i3+1]+=pvel[i3+1]*dt;pp[i3+2]+=pvel[i3+2]*dt;
+  if(pp[i3+1]<.02){pp[i3+1]=.02;pvel[i3]=pvel[i3+1]=pvel[i3+2]=0;pl[i]=Math.max(pl[i],14)}}}
+ pg.attributes.position.needsUpdate=pg.attributes.color.needsUpdate=true}
+function impacts(dt){for(const r of ragdolls)for(const p of r.list){const v=p.body.linvel(),t=p.body.translation();
+ if(!isFinite(t.y)||t.y<-30){resetRagdoll(r);break}
+ const sp=Math.hypot(v.x,v.y,v.z);if(sp>60)p.body.setLinvel({x:v.x*60/sp,y:v.y*60/sp,z:v.z*60/sp},true);{const w=p.body.angvel(),ws=Math.hypot(w.x,w.y,w.z);if(ws>40)p.body.setAngvel({x:w.x*40/ws,y:w.y*40/ws,z:w.z*40/ws},true)}
+ const dv=Math.hypot(v.x-p.pv.x,v.y-p.pv.y,v.z-p.pv.z);p.cd-=dt;
+ if(S.fx&&dv>4&&p.cd<=0){const n=Math.min(40,Math.floor(dv*2*S.part));p.cd=.12;
+  if(S.blood)emit(t.x,t.y,t.z,n,.6,.02,.02,dv*.5);if(t.y<.45)emit(t.x,.05,t.z,n>>1,.55,.55,.5,dv*.3)}
+ p.pv.set(v.x,v.y,v.z)}}
+
+// ---------- debug lines ----------
+const dbg=new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0x44ff88}));dbg.frustumCulled=false;dbg.visible=false;scene.add(dbg);
+
+// ---------- input & camera ----------
+let yaw=0,pitch=-.1,auto=false,oy=0,op=.3,od=3.2,saved=null;const keys={},T=new THREE.Vector3();
+camera.position.set(0,2,6);
+const locked=()=>document.pointerLockElement==canvas;
+const dir=()=>camera.getWorldDirection(new THREE.Vector3());
+let grab=null;
+function ray(){const d=dir(),h=world.castRay(new RAPIER.Ray(camera.position,d),100,true);if(!h)return null;
+ const b=h.collider.parent(),p=b&&bodyMap.get(b.handle);if(!p)return null;return{p,t:h.timeOfImpact??h.toi,d}}
+canvas.addEventListener('mousedown',e=>{
+ if(!locked()){canvas.requestPointerLock();return}
+ if(cur>=0){if(e.button==0){firing=true;tryFire()}else if(e.button==2&&WP[cur].scope){zoom=!zoom;setZoom()}return}
+ const h=ray();if(!h)return;select(h.p.r);
+ if(e.button==0){const o=camera.position.clone().addScaledVector(h.d,h.t),t=h.p.body.translation(),q=h.p.body.rotation();
+  const l=o.sub(new THREE.Vector3(t.x,t.y,t.z)).applyQuaternion(new THREE.Quaternion(q.x,q.y,q.z,q.w).invert());grab={p:h.p,dist:h.t,l}}
+ else if(e.button==2){const t=h.p.body.translation(),k=(e.ctrlKey?-1:1)*S.impulse*h.p.body.mass();
+  h.p.body.applyImpulseAtPoint({x:h.d.x*k,y:h.d.y*k,z:h.d.z*k},camera.position.clone().addScaledVector(h.d,h.t),true)}});
+addEventListener('mouseup',e=>{if(e.button==0){grab=null;firing=false}});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+addEventListener('mousemove',e=>{if(!locked())return;const s=.0022*S.sens*camera.fov/65;
+ if(auto){oy-=e.movementX*s;op=Math.max(-1.4,Math.min(1.4,op+e.movementY*s))}else{yaw-=e.movementX*s;pitch=Math.max(-1.5,Math.min(1.5,pitch-e.movementY*s))}});
+addEventListener('wheel',e=>{if(auto)od=Math.max(.6,Math.min(10,od+e.deltaY*.003));else camera.position.addScaledVector(dir(),-e.deltaY*.01)},{passive:true});
+function setAuto(on){if(on&&!sel)sel=ragdolls[0];if(on&&!sel)return;if(on&&!auto){saved=[camera.position.clone(),yaw,pitch];const c=sel.parts.chest.body.translation();T.set(c.x,c.y,c.z)}
+ if(!on&&auto&&saved){camera.position.copy(saved[0]);yaw=saved[1];pitch=saved[2]}auto=on}
+function camReset(){auto=false;camera.position.set(0,2,6);yaw=0;pitch=-.1}
+addEventListener('keydown',e=>{keys[e.code]=true;
+ if(e.code=='Space'){S.paused=!S.paused;e.preventDefault()}
+ else if(e.code=='KeyR')resetScene();else if(e.code=='KeyN'){const q=aimPoint();spawn(q.x,q.y+.05,q.z,yaw)}else if(e.code=='KeyB')spawnDrum(aimPoint());else if(e.code=='KeyU')addRamp(aimPoint(),yaw);else if(e.code=='KeyY')cycleGravity();else if(e.code=='KeyI')toggleFreeze();else if(e.code=='KeyT')slowmo();else if(e.code=='KeyV')showV=!showV;else if(e.code=='KeyK')setAuto(!auto);else if(e.code=='KeyP')S.paused=!S.paused;
+ else if(e.code=='KeyF'&&sel){const d=dir();for(const p of sel.list){const m=p.body.mass()*S.impulse;p.body.applyImpulse({x:d.x*m,y:d.y*m+m*.3,z:d.z*m},true)}}
+ else if(e.code=='KeyX'){S.xray=!S.xray;ragdolls.forEach(setXray)}
+ else if(e.code=='KeyC')setAuto(!auto);
+ else if(e.code=='Tab'){e.preventDefault();togglePanel()}
+ else if(e.code=='Escape')grab=null;else if(/^Digit[0-5]$/.test(e.code))setWeapon(+e.code[5]-1)});
+addEventListener('keyup',e=>keys[e.code]=false);
+
+
+// ---------- menu toggle ----------
+const panelEl=document.getElementById('panel'),tog=document.getElementById('tog');
+function togglePanel(){const hide=panelEl.style.display!='none';panelEl.style.display=hide?'none':'';tog.style.right=hide?'8px':'238px';tog.textContent=hide?'☰ Menu':'✕ Close';if(!hide&&locked())document.exitPointerLock()}
+tog.onclick=togglePanel;
+
+// ---------- anatomy: organs, vessels, wounds, physiology ----------
+const vm=new THREE.MeshBasicMaterial({color:0xc01020,depthTest:false}),wm=new THREE.MeshBasicMaterial({color:0x4a0000});
+// name,part,x,y,z,radius,color,leak/s
+const ORG=[['brain','head',0,.02,-.01,.065,0xf0a0b0,1],['heart','chest',.045,.06,.02,.05,0xc01830,8],['lungL','chest',.1,.08,0,.075,0xe88a9a,.8],['lungR','chest',-.1,.08,0,.075,0xe88a9a,.8],
+ ['liver','chest',-.07,-.08,.03,.07,0x7a2a1a,3],['stomach','chest',.08,-.12,.03,.05,0xd89a4a,.5],['kidneyL','pelvis',.07,.05,-.05,.035,0x8a1a2a,1.5],['kidneyR','pelvis',-.07,.05,-.05,.035,0x8a1a2a,1.5],
+ ['bowel','pelvis',0,-.01,.02,.075,0xe0a8a0,.7],['cord','chest',0,0,-.075,.018,0xe8e0b0,0],['cordC','neck',0,0,-.02,.012,0xe8e0b0,0]];
+// name,part,medial offset,z,y0,y1,leak/s,sided
+const VES=[['aorta','chest',0,-.045,-.15,.15,12,0],['carotid','neck',.025,.02,-.02,.02,6,1],['brachial','uarm',.02,0,-.08,.08,2.5,1],['radial','farm',.02,0,-.07,.07,1,1],['femoral','thigh',.03,.02,-.12,.12,6,1],['tibial','shin',.025,0,-.12,.12,1.2,1]];
+function buildAnatomy(r){
+ for(const o of ORG){const p=r.parts[o[1]],m=new THREE.MeshBasicMaterial({color:o[6],depthTest:false,transparent:true,opacity:.9}),mesh=new THREE.Mesh(G.sph,m);
+  mesh.position.set(o[2],o[3],o[4]);mesh.scale.setScalar(o[5]);mesh.renderOrder=6;p.g.add(mesh);
+  const og={n:o[0],p,lp:new THREE.Vector3(o[2],o[3],o[4]),r:o[5],hp:100,leak:o[7],art:o[0]=='heart'||o[0]=='brain',mesh,m,base:new THREE.Color(o[6])};r.organs.push(og);r.org[o[0]]=og}
+ for(const v of VES)for(const s of(v[7]?[-1,1]:[0])){const pn=v[1]=='neck'?'neck':v[7]?v[1]+(s<0?'L':'R'):v[1],p=r.parts[pn],x=v[1]=='neck'?s*v[2]:-s*v[2];
+  r.organs.push({n:v[0]+(s<0?'L':s>0?'R':''),p,pts:[0,.5,1].map(k=>new THREE.Vector3(x,v[4]+(v[5]-v[4])*k,v[3])),r:.009,hp:100,leak:v[6],art:true});
+  bone(p.g,G.cyl,x,(v[4]+v[5])/2,v[3],.008,v[5]-v[4],.008,0,vm)}}
+function addDeco(r){const dm=new THREE.MeshStandardMaterial({color:0x151515,roughness:.6});
+ const band=new THREE.Mesh(G.tor,dm);band.scale.set(.26,.26,.26);band.rotation.x=Math.PI/2;band.position.y=.01;r.parts.head.mesh.add(band);
+ const st=new THREE.Mesh(G.box,dm);st.scale.set(.384,.035,.226);st.position.y=.1;r.parts.chest.mesh.add(st);r.deco=[band,st]}
+function heal(r){for(const w of r.wounds)w.p.mesh.remove(w.mk);r.wounds=[];for(const o of r.organs){o.hp=100;o.w=null}Object.assign(r,{sf:0,fallen:false,vol:100,o2:100,hr:1.2,tone:1,par:false,state:'Conscious'})}
+function addWound(r,p,lp,ld,o){let w=o.w;if(w){w.rate=Math.min(w.rate*1.3,o.leak*2);return}
+ w={p,lp,ld,rate:o.leak,art:!!o.art,clot:o.art?.01:(o.leak<1?.06:.03),acc:0,froth:/lung/.test(o.n)};o.w=w;r.wounds.push(w);
+ if(r.wounds.length>24){const old=r.wounds.shift();old.p.mesh.remove(old.mk)}
+ const mk=new THREE.Mesh(G.sph,wm);mk.position.copy(lp);mk.scale.setScalar(.014);p.mesh.add(mk);w.mk=mk}
+function emitDir(x,y,z,d,sp,spr,n,r,g,b){for(let k=0;k<n;k++){const i=ptr=(ptr+1)%N,i3=i*3,s=sp*(.6+Math.random()*.8);
+ pp[i3]=x;pp[i3+1]=y;pp[i3+2]=z;pvel[i3]=d.x*s+(Math.random()-.5)*spr*s;pvel[i3+1]=d.y*s+(Math.random()-.5)*spr*s;pvel[i3+2]=d.z*s+(Math.random()-.5)*spr*s;
+ const j=.7+Math.random()*.5;pc[i3]=r*j;pc[i3+1]=g*j;pc[i3+2]=b*j;pl[i]=3+Math.random()*5}}
+function shot(p,pt,d,w){
+ const r=p.r,t=p.body.translation(),q=p.body.rotation(),Qi=new THREE.Quaternion(q.x,q.y,q.z,q.w),T0=new THREE.Vector3(t.x,t.y,t.z),Qv=Qi.clone().invert();
+ p.body.applyImpulseAtPoint({x:d.x*w.imp,y:d.y*w.imp,z:d.z*w.imp},pt,true);select(r);
+ if(r.tone>.4){const c=r.parts.chest.body;c.applyTorqueImpulse({x:(Math.random()-.5)*2,y:(Math.random()-.5)*2,z:(Math.random()-.5)*2},true)}
+ const lp=pt.clone().sub(T0).applyQuaternion(Qv),ld=d.clone().negate().applyQuaternion(Qv);let hit=false;
+ for(const o of r.organs){if(o.p!==p)continue;let best=9;
+  for(const l of(o.pts||[o.lp])){const c=l.clone().applyQuaternion(Qi).add(T0),s=Math.max(0,Math.min(.4,c.clone().sub(pt).dot(d)));best=Math.min(best,pt.clone().addScaledVector(d,s).distanceTo(c))}
+  if(best<o.r+.012){hit=true;o.hp-=w.dmg*(.6+Math.random()*.8);addWound(r,p,lp,ld,o)}}
+ if(!hit)addWound(r,p,lp,ld,{n:'flesh',leak:.3,art:false});
+ if(S.fx&&S.blood){emitDir(pt.x,pt.y,pt.z,d.clone().negate(),3,.8,Math.floor(10*S.part),.6,.02,.02);emitDir(pt.x,pt.y,pt.z,d,5,.6,Math.floor(8*S.part),.7,.02,.02)}}
+const BL=[.75,.02,.02],VN=[.4,0,.04],FR=[.95,.4,.45];
+function physio(r,dt){
+ {const pq=r.parts.pelvis.body.rotation(),cq=r.parts.chest.body.rotation(),pt=r.parts.pelvis.body.translation();
+  const up=Math.min(1-2*(pq.x*pq.x+pq.z*pq.z),1-2*(cq.x*cq.x+cq.z*cq.z));
+  if(up<.5||pt.y<.5)r.fallen=true;else if(up>.85&&pt.y>.9)r.fallen=false;
+  const fy=Math.min(r.parts.footL.body.translation().y,r.parts.footR.body.translation().y);
+  const want=S.stand&&!r.fallen&&fy<.15&&!(grab&&grab.p.r===r)?1:0;r.sf+=(want-r.sf)*Math.min(1,dt*6)}
+ const bp=Math.max(0,r.vol/100)*(r.hr>.05?1:.25);let leak=0;r.phase+=dt*r.hr*6.283;const pulse=Math.max(0,Math.sin(r.phase));
+ for(const w of r.wounds){leak+=w.rate*(w.art?bp:Math.min(1,bp+.3));w.rate*=Math.exp(-w.clot*dt);
+  if(!S.fx||!S.blood||w.rate<.02||r.vol<=0)continue;
+  const t=w.p.body.translation(),q=w.p.body.rotation(),Qq=new THREE.Quaternion(q.x,q.y,q.z,q.w),c=w.lp.clone().applyQuaternion(Qq).add(new THREE.Vector3(t.x,t.y,t.z)),d=w.ld.clone().applyQuaternion(Qq),col=w.froth?FR:w.art?BL:VN;
+  if(w.art){const n=Math.floor(pulse*pulse*6*S.part*bp*Math.min(2,w.rate/3+.5));if(n>0)emitDir(c.x,c.y,c.z,d,1.5+4*bp,.8,n,...col)}
+  else{w.acc+=w.rate*dt*5*S.part*(bp+.2);const n=Math.floor(w.acc);w.acc-=n;if(n>0)emitDir(c.x,c.y,c.z,d,.6,1.5,Math.min(n,6),...col)}}
+ r.vol=Math.max(0,r.vol-leak*dt);const O=r.org;
+ r.hr=O.heart.hp<=0?Math.max(0,r.hr-dt*.7):Math.min(2.6,1.2+(100-r.vol)*.02)*(r.vol>15?1:r.vol/15);
+ if(O.cord.hp<=0)r.par=true;
+ const lf=Math.max(0,Math.min(1,(O.lungL.hp+O.lungR.hp)/200)),apnea=O.cordC.hp<=0;
+ if(r.hr<.05||apnea)r.o2=Math.max(0,r.o2-dt*(apnea?3:5));else r.o2=Math.max(0,Math.min(100,r.o2+dt*(8*lf-(1-lf)*6)));
+ const dead=O.brain.hp<=0||(r.hr<.05&&r.o2<15)||r.vol<20||r.o2<=0;
+ const c=O.brain.hp<=0||apnea?0:Math.max(0,Math.min(1,(r.vol-35)/55))*Math.min(1,r.o2/50);
+ r.tone+=(c-r.tone)*Math.min(1,dt*(c<r.tone?4:1));r.state=dead?'DEAD':r.tone<.15?'Unconscious':'Conscious';
+ if(r.hr<.4&&r.hr>.02&&r.tone>.1&&!dead)for(const p of r.list)p.body.applyTorqueImpulse({x:(Math.random()-.5)*.03,y:(Math.random()-.5)*.03,z:(Math.random()-.5)*.03},true);
+ for(const o of r.organs)if(o.mesh)o.m.color.copy(o.base).multiplyScalar(.25+.75*Math.max(0,o.hp)/100);
+ O.heart.mesh.scale.setScalar(.05*(1+.15*pulse))}
+
+// ---------- weapons ----------
+const WP=[{n:'Draco',rate:11,auto:1,mag:30,rl:2,dmg:45,imp:14,spr:.018,pen:1,rec:.012,len:.5,col:0x3a3a3a},
+ {n:'Glock 19 + switch',rate:20,auto:1,mag:33,rl:1.8,dmg:30,imp:7,spr:.03,pen:0,rec:.01,len:.22,col:0x222222},
+ {n:'Glock 19',rate:6,auto:0,mag:15,rl:1.5,dmg:30,imp:7,spr:.01,pen:0,rec:.012,len:.22,col:0x222222},
+ {n:'Sniper Rifle',rate:.9,auto:0,mag:5,rl:2.4,dmg:100,imp:45,spr:.0004,pen:2,rec:.05,scope:1,len:.9,col:0x2b3a2b},
+ {n:'Revolver',rate:1.8,auto:0,mag:6,rl:2.2,dmg:75,imp:24,spr:.008,pen:1,rec:.04,len:.26,col:0x666666}];
+WP.forEach(w=>w.ammo=w.mag);
+let cur=-1,cd=0,reload=0,ri=0,firing=false,zoom=false;
+scene.add(camera);const gun=new THREE.Group();camera.add(gun);gun.position.set(.16,-.14,-.35);
+function buildGun(){gun.clear();if(cur<0)return;const w=WP[cur],m=new THREE.MeshStandardMaterial({color:w.col,roughness:.4,metalness:.7,depthTest:false});
+ const b=new THREE.Mesh(G.box,m);b.scale.set(.035,.045,w.len);b.position.z=-w.len/2;
+ const g=new THREE.Mesh(G.box,m);g.scale.set(.03,.09,.04);g.position.set(0,-.06,-.04);g.rotation.x=.2;
+ const br=new THREE.Mesh(G.box,m);br.scale.set(.015,.015,w.len*.5);br.position.z=-w.len*1.2;
+ [b,g,br].forEach(o=>{o.renderOrder=20;gun.add(o)})}
+function setZoom(){camera.fov=zoom?14:65;camera.updateProjectionMatrix();gun.visible=!zoom}
+function setWeapon(i){cur=i;zoom=false;setZoom();buildGun();firing=false;grab=null}
+const trs=[];for(let i=0;i<10;i++){const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]),new THREE.LineBasicMaterial({color:0xffe9a0,transparent:true}));l.visible=false;l.frustumCulled=false;l.life=0;scene.add(l);trs.push(l)}
+let ti=0;function tracer(a,b){const l=trs[ti++%10],p=l.geometry.attributes.position;p.setXYZ(0,a.x,a.y,a.z);p.setXYZ(1,b.x,b.y,b.z);p.needsUpdate=true;l.life=.07;l.visible=true}
+function fire(w){
+ const d=dir().add(new THREE.Vector3(Math.random()-.5,Math.random()-.5,Math.random()-.5).multiplyScalar(w.spr*2*(zoom?.3:1))).normalize();
+ const o=camera.position.clone(),mz=camera.localToWorld(new THREE.Vector3(.16,-.1,-.7));let ex,end=o.clone().addScaledVector(d,80);
+ for(let k=0;k<=w.pen;k++){const h=world.castRay(new RAPIER.Ray(o,d),150,true,undefined,undefined,ex);if(!h)break;
+  const pt=o.clone().addScaledVector(d,h.timeOfImpact??h.toi);end=pt;const b=h.collider.parent(),p=b&&bodyMap.get(b.handle);
+  if(!p){const dm=b&&drumMap.get(b.handle);if(dm)hitDrum(dm,pt,d,w);else if(S.fx)emit(pt.x,pt.y,pt.z,Math.floor(8*S.part),.55,.55,.5,2.5);break}
+  S.frozen?pend.push([p,pt.clone(),d.clone(),w]):shot(p,pt,d,w);ex=h.collider;o.copy(pt).addScaledVector(d,.02)}
+ tracer(zoom?camera.position.clone().addScaledVector(d,.5).add(new THREE.Vector3(0,-.02,0)):mz,end);
+ gun.position.z+=.05+w.rec*2;pitch+=w.rec*(zoom?.5:1);yaw+=(Math.random()-.5)*w.rec*.6}
+function tryFire(){if(cur<0||cd>0||reload>0)return;const w=WP[cur];if(w.ammo<=0){reload=w.rl;ri=cur;return}
+ fire(w);w.ammo--;cd=1/w.rate;if(w.ammo<=0){reload=w.rl;ri=cur}}
+function gunTick(dt){for(const d of drums){const t=d.b.translation(),q=d.b.rotation();d.m.position.set(t.x,t.y,t.z);d.m.quaternion.set(q.x,q.y,q.z,q.w)}flash.intensity*=Math.pow(.02,dt);cd-=dt;if(reload>0){reload-=dt;if(reload<=0)WP[ri].ammo=WP[ri].mag}
+ if(firing&&cur>=0&&WP[cur].auto)tryFire();gun.position.z+=(-.35-gun.position.z)*Math.min(1,dt*12);
+ for(const l of trs)if(l.visible){l.life-=dt;l.material.opacity=Math.max(0,l.life/.07);if(l.life<=0)l.visible=false}}
+function hudX(){let t=`${S.frozen?' · TIME FROZEN':''}${S.gravity==-9.81?'':' · g='+S.gravity}\n${cur<0?'Hand (grab)':WP[cur].n+' '+WP[cur].ammo+'/'+WP[cur].mag+(reload>0?' · reloading':'')}`;
+ if(sel&&showV)t+=`\nSelected: ${sel.state} · blood ${Math.round(sel.vol)}% · HR ${Math.round(sel.hr*60)} · O2 ${Math.round(sel.o2)}% · wounds ${sel.wounds.length} · ${sel.fallen?'down':sel.sf>.5?'standing':'unsteady'}\nDamaged: ${sel.organs.filter(o=>o.hp<100).map(o=>o.n+' '+Math.max(0,Math.round(o.hp))+'%').join(', ')||'none'}`;return t}
+
+
+// ---------- lab props & modes (FlopBox-style) ----------
+let showV=true;const pend=[],drums=[],drumMap=new Map(),flash=new THREE.PointLight(0xffa040,0,14);scene.add(flash);
+const drumMat=new THREE.MeshStandardMaterial({color:0xb02020,roughness:.5,metalness:.4});
+function aimPoint(){const d=dir(),h=world.castRay(new RAPIER.Ray(camera.position,d),80,true);return h?camera.position.clone().addScaledVector(d,h.timeOfImpact??h.toi):camera.position.clone().addScaledVector(d,6).setY(0)}
+function spawnDrum(pt){const b=world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(pt.x,pt.y+.5,pt.z).setLinearDamping(.05).setAngularDamping(.3));
+ world.createCollider(RAPIER.ColliderDesc.cylinder(.45,.3).setMass(40).setFriction(.8).setRestitution(.2),b);
+ const m=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,.9,20),drumMat);m.castShadow=m.receiveShadow=true;scene.add(m);const d={b,m,hp:100};drums.push(d);drumMap.set(b.handle,d)}
+function hitDrum(dm,pt,d,w){dm.b.applyImpulseAtPoint({x:d.x*w.imp,y:d.y*w.imp,z:d.z*w.imp},pt,true);dm.hp-=w.dmg*.6;if(S.fx)emit(pt.x,pt.y,pt.z,8,1,.8,.3,3);if(dm.hp<=0)explode(dm)}
+function explode(d){if(d.dead)return;d.dead=true;const t=d.b.translation(),c=new THREE.Vector3(t.x,t.y,t.z);
+ scene.remove(d.m);world.removeRigidBody(d.b);drumMap.delete(d.b.handle);drums.splice(drums.indexOf(d),1);flash.position.copy(c);flash.intensity=80;
+ if(S.fx){const up=new THREE.Vector3(0,1,0);emitDir(c.x,c.y+.4,c.z,up,7,1.6,Math.floor(120*S.part),1,.5,.1);emitDir(c.x,c.y+.6,c.z,up,3,1.2,Math.floor(80*S.part),.25,.25,.25)}
+ for(const r of ragdolls){let md=99;for(const p of r.list){const q=p.body.translation(),v=new THREE.Vector3(q.x,q.y,q.z).sub(c),dist=v.length();md=Math.min(md,dist);if(dist>6)continue;const f=1-dist/6,m=p.body.mass()*16;v.normalize();p.body.applyImpulse({x:v.x*f*m,y:(v.y*f+f*.5)*m,z:v.z*f*m},true)}
+  if(md<3.5){const f=1-md/3.5;for(const o of r.organs)if(o.mesh)o.hp-=f*80*(.4+Math.random()*.6);r.vol=Math.max(0,r.vol-f*20)}}
+ for(const o of drums.slice()){const q=o.b.translation(),v=new THREE.Vector3(q.x,q.y,q.z).sub(c),dist=v.length();if(dist<6){v.normalize();o.b.applyImpulse({x:v.x*400,y:300,z:v.z*400},true);if(dist<4){o.hp-=90;if(o.hp<=0)setTimeout(()=>explode(o),120)}}}}
+function addRamp(pt,yawA){const q=new THREE.Quaternion().setFromAxisAngle(Yv,yawA).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),.3));
+ const b=world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(pt.x,pt.y+.75,pt.z).setRotation({x:q.x,y:q.y,z:q.z,w:q.w}));world.createCollider(RAPIER.ColliderDesc.cuboid(1.5,.12,2.5).setFriction(.9),b);
+ const m=new THREE.Mesh(new THREE.BoxGeometry(3,.24,5),sm);m.position.set(pt.x,pt.y+.75,pt.z);m.quaternion.copy(q);m.castShadow=m.receiveShadow=true;scene.add(m)}
+const GP=[-9.81,-1.62,0,-24.8];let gpi=0;
+function cycleGravity(){gpi=(gpi+1)%4;S.gravity=GP[gpi];world.gravity={x:0,y:S.gravity,z:0};const i=document.querySelector('input[data-k=gravity]');if(i){i.value=S.gravity;i.previousSibling.textContent=S.gravity}}
+function toggleFreeze(){S.frozen=!S.frozen;if(!S.frozen){for(const a of pend)if(ragdolls.includes(a[0].r))shot(...a);pend.length=0}}
+function slowmo(){S.time=S.time<1?1:.2;const i=document.querySelector('[data-t]');if(i){i.value=S.time;i.previousSibling.textContent=S.time}}
+
+// ---------- UI ----------
+const P=document.getElementById('panel');
+const H=t=>{const h=document.createElement('h4');h.textContent=t;P.append(h)};
+const B=(t,f)=>{const b=document.createElement('button');b.textContent=t;b.onclick=f;P.append(b)};
+const C=(t,k,f)=>{const l=document.createElement('label');const i=document.createElement('input');i.type='checkbox';i.checked=S[k];i.onchange=()=>{S[k]=i.checked;f&&f()};l.append(i,' '+t);P.append(l)};
+const R=(t,k,mn,mx,st,f)=>{const l=document.createElement('label'),i=document.createElement('input'),s=document.createElement('span');i.type='range';
+ Object.assign(i,{min:mn,max:mx,step:st,value:S[k]});i.dataset.k=k;s.textContent=S[k];l.append(t+': ',s,i);i.oninput=()=>{S[k]=+i.value;s.textContent=i.value;f&&f()};P.append(l)};
+H('FLOPLAB');
+const rd=()=>{const d=dir();return[camera.position.x+d.x*4,Math.max(2,camera.position.y+d.y*4),camera.position.z+d.z*4]};
+H('Tools');B('Spawn',()=>spawn(...rd(),Math.random()*6.28));B('Spawn ×5',()=>spawnMany());B('Delete selected',()=>del(sel));B('Dummy (N)',()=>{const q=aimPoint();spawn(q.x,q.y+.05,q.z,yaw)});B('Fuel drum (B)',()=>spawnDrum(aimPoint()));B('Ramp (U)',()=>addRamp(aimPoint(),yaw));B('Gravity preset (Y)',cycleGravity);B('Freeze time (I)',toggleFreeze);B('Vitals (V)',()=>showV=!showV);
+B('Reset ragdoll (R)',()=>resetRagdoll(sel));B('Reset scene',resetScene);B('Pause (Space)',()=>S.paused=!S.paused);
+B('Slow-mo',()=>{S.time=S.time<1?1:.2;document.querySelector('[data-t]').value=S.time});B('X-ray (X)',()=>{S.xray=!S.xray;ragdolls.forEach(setXray)});
+B('Autopsy cam (C)',()=>setAuto(!auto));B('Camera reset',camReset);B('Fullscreen',()=>document.documentElement.requestFullscreen());
+H('Physics');
+R('Gravity','gravity',-30,0,.1,()=>world.gravity={x:0,y:S.gravity,z:0});
+R('Mass scale','mass',.2,4,.1,()=>ragdolls.forEach(r=>r.list.forEach(p=>p.col.setMass(p.d[6]*S.mass))));
+C('Standing balance','stand');R('Joint stiffness','stiff',0,30,.5);R('Joint damping','damp',0,10,.1);R('Upright strength','strength',0,10,.1);
+R('Time scale','time',.05,2,.05);document.querySelectorAll('#panel input[type=range]').forEach(i=>{if(i.min=='.05')i.dataset.t=1});
+R('Collision bounce','coll',0,1,.05,()=>ragdolls.forEach(r=>r.list.forEach(p=>p.col.setRestitution(S.coll))));
+R('Impulse','impulse',1,30,.5);
+H('Effects');C('Effects on','fx');C('Blood','blood');R('Particle amount','part',0,3,.1);
+H('View');C('Debug physics','debug',()=>dbg.visible=S.debug);R('Mouse sensitivity','sens',.2,3,.1);
+H('Weapons');B('Hand / grab (0)',()=>setWeapon(-1));WP.forEach((w,i)=>B(w.n+' ('+(i+1)+')',()=>setWeapon(i)));H('Controls');P.insertAdjacentHTML('beforeend','<div style="line-height:1.6;color:#8d97ab">Click view: capture mouse<br>WASD move · Shift fast · Q/E down/up<br>LMB grab (gun: fire) · RMB push (gun: scope)<br>0 hand · 1 Draco · 2 G19 switch · 3 G19<br>4 Sniper · 5 Revolver · Tab menu<br>Wheel zoom · F shove · X x-ray · C/K autopsy<br>N dummy · B drum · U ramp · Y gravity<br>T slow-mo · I freeze · V vitals · R new dummies<br>Space/P pause · Tab menu · Esc release</div>');
+
+// ---------- main loop ----------
+resetScene();msg.textContent='Click the view to capture the mouse';
+let last=performance.now(),fc=0,ft=0,fps=0;const hud=document.getElementById('hud');
+function frame(now){requestAnimationFrame(frame);const dt=Math.min((now-last)/1000,1/30);last=now;
+ if(!S.paused&&!S.frozen){const sd=dt*S.time/2;world.timestep=sd;
+  for(let k=0;k<2;k++){for(const r of ragdolls)drive(r);
+   if(grab){const t=grab.p.body.translation(),q=grab.p.body.rotation(),v=grab.p.body.linvel(),m=grab.p.body.mass();
+    const a=grab.l.clone().applyQuaternion(Q1.set(q.x,q.y,q.z,q.w)).add(V2.set(t.x,t.y,t.z));
+    const tg=camera.position.clone().addScaledVector(dir(),grab.dist);
+    const f=tg.sub(a).multiplyScalar(100).sub(V.set(v.x,v.y,v.z).multiplyScalar(20));if(f.length()>400)f.setLength(400);f.multiplyScalar(m*sd);
+    grab.p.body.applyImpulseAtPoint({x:f.x,y:f.y,z:f.z},{x:a.x,y:a.y,z:a.z},true)}
+   world.step()}
+  impacts(dt);for(const r of ragdolls)physio(r,dt*S.time)}
+ for(const r of ragdolls)for(const p of r.list){const t=p.body.translation(),q=p.body.rotation();p.mesh.position.set(t.x,t.y,t.z);p.mesh.quaternion.set(q.x,q.y,q.z,q.w)}
+ if(S.debug){const b=world.debugRender();dbg.geometry.setAttribute('position',new THREE.BufferAttribute(b.vertices,3))}
+ gunTick(dt);updParticles(dt);
+ if(auto&&sel){const c=sel.parts.chest.body.translation();T.lerp(V.set(c.x,c.y,c.z),1-Math.exp(-6*dt));const cp=Math.cos(op);
+  camera.position.lerp(V2.set(T.x+od*cp*Math.sin(oy),T.y+od*Math.sin(op),T.z+od*cp*Math.cos(oy)),1-Math.exp(-10*dt));camera.lookAt(T)}
+ else{camera.rotation.set(pitch,yaw,0);const sp=(keys.ShiftLeft?9:3)*dt,d=dir(),rt=new THREE.Vector3().crossVectors(d,Yv).normalize();
+  if(keys.KeyW)camera.position.addScaledVector(d,sp);if(keys.KeyS)camera.position.addScaledVector(d,-sp);
+  if(keys.KeyD)camera.position.addScaledVector(rt,sp);if(keys.KeyA)camera.position.addScaledVector(rt,-sp);
+  if(keys.KeyE)camera.position.y+=sp;if(keys.KeyQ)camera.position.y-=sp}
+ renderer.render(scene,camera);
+ fc++;ft+=dt;if(ft>.5){fps=Math.round(fc/ft);fc=0;ft=0}
+ hud.textContent=`FPS ${fps} · Ragdolls ${ragdolls.length} · ${auto?'Autopsy cam':'Free cam'} · ${S.paused?'PAUSED':'x'+S.time.toFixed(2)}${S.xray?' · X-RAY':''}${hudX()}`;
+ msg.style.display=locked()?'none':'block'}
+requestAnimationFrame(frame);
+</script></body></html>
