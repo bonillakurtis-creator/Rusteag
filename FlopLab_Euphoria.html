@@ -109,7 +109,7 @@ function spawn(x,y,z,yaw=0){
  for(const j of J){
   const a=r.parts[j[0]],b=r.parts[j[1]],la={x:j[3]-a.d[3],y:j[4]-a.d[4],z:j[5]-a.d[5]},lb={x:j[3]-b.d[3],y:j[4]-b.d[4],z:j[5]-b.d[5]};
   let jd;if(j[2]=='s')jd=RAPIER.JointData.spherical(la,lb);else{jd=RAPIER.JointData.revolute(la,lb,{x:1,y:0,z:0});jd.limitsEnabled=true;jd.limits=j[6]}
-  const jt=world.createImpulseJoint(jd,a.body,b.body,true);if(jt.setContactsEnabled)jt.setContactsEnabled(false);r.joints.push({a,b,lim:LIMJ[b.n.replace(/[LR]$/,'')]||2.5});
+  const jt=world.createImpulseJoint(jd,a.body,b.body,true);if(jt.setContactsEnabled)jt.setContactsEnabled(false);r.joints.push({a,b,jt,lim:LIMJ[b.n.replace(/[LR]$/,'')]||2.5,severed:false,jd:j[2],la,lb,limits:j[6]||null});
   bone(b.g,G.sph,lb.x,lb.y,lb.z,.03,.03,.03,0,jm)}
  buildAnatomy(r);addDeco(r);makeHelmet(r);setXray(r);ragdolls.push(r);select(r);return r}
 function select(r){sel=r;for(const q of ragdolls)q.mat.emissive.setHex(q==r?0x1a3f7a:0)}
@@ -117,6 +117,7 @@ function setXray(r){r.mat.transparent=S.xray;r.mat.opacity=S.xray?.18:1;r.mat.de
  for(const p of r.list){p.g.visible=S.xray;for(const m of p.marks)m.visible=!S.xray;visPart(p)}
  for(const m of r.deco||[])m.visible=!S.xray;if(r.helmet&&r.helmet.on)r.helmet.g.visible=!S.xray}
 function del(r){if(!r)return;
+ resetGoreFor(r);
  if(r.helmet){const h=r.helmet;if(h.body){world.removeRigidBody(h.body);helmMap.delete(h.body.handle);const i=looseH.indexOf(h);if(i>=0)looseH.splice(i,1)}h.g.removeFromParent();h.mat.dispose()}
  for(const p of r.list){bodyMap.delete(p.body.handle);world.removeRigidBody(p.body);scene.remove(p.mesh);p.mesh.geometry.dispose();p.ov.material.dispose();p.bmat.dispose()}
  r.mat.dispose();ragdolls.splice(ragdolls.indexOf(r),1);if(grab&&grab.p.r==r)grab=null;if(sel==r){sel=ragdolls[ragdolls.length-1]||null;if(sel)select(sel)}if(!sel)auto=false}
@@ -128,7 +129,7 @@ function spawnMany(n=5){for(let i=0;i<n;i++)spawn((Math.random()-.5)*8,2+i*1.2,(
 const Q1=new THREE.Quaternion(),Q2=new THREE.Quaternion(),V=new THREE.Vector3(),W=new THREE.Vector3(),V2=new THREE.Vector3();
 function drive(r){for(const p of r.list){p.body.resetForces(true);p.body.resetTorques(true)}
  const tn=r.tone*(r.stun>0?.3:1),sf=r.par?0:r.sf*tn;   // stunned ragdolls go loose and lose balance
- for(const j of r.joints){const a=j.a.body,b=j.b.body,qa=a.rotation(),qb=b.rotation();
+ for(const j of r.joints){if(j.severed)continue;const a=j.a.body,b=j.b.body,qa=a.rotation(),qb=b.rotation();
   Q1.set(qa.x,qa.y,qa.z,qa.w);Q2.set(qb.x,qb.y,qb.z,qb.w);
   const rel0=Q1.clone().invert().multiply(Q2),tq=r.rw>.01&&POSEQ[r.pose]?POSEQ[r.pose][j.b.n]:null,rel=tq?rel0.clone().multiply(Q3.copy(tq).invert()):rel0,sg=rel.w<0?-1:1,ang=2*Math.acos(Math.min(1,rel.w*sg)),s=Math.sqrt(Math.max(0,1-rel.w*rel.w)),I=Math.min(j.a.I0,j.b.I0)*S.mass,
    lf=j.b.lf*(j.b.n=='head'?.6:1),ex=tq?0:Math.max(0,ang-j.lim),   // damaged limbs go limp; head hangs looser; soft joint limit
@@ -231,7 +232,7 @@ function buildAnatomy(r){
 function addDeco(r){const dm=new THREE.MeshStandardMaterial({color:0x151515,roughness:.6});
  const band=new THREE.Mesh(G.tor,dm);band.scale.set(.26,.26,.26);band.rotation.x=Math.PI/2;band.position.y=.01;r.parts.head.mesh.add(band);
  const st=new THREE.Mesh(G.box,dm);st.scale.set(.384,.035,.226);st.position.y=.1;r.parts.chest.mesh.add(st);r.deco=[band,st]}
-function heal(r){for(const w of r.wounds)w.p.mesh.remove(w.mk);r.wounds=[];for(const o of r.organs){o.hp=100;o.w=null}Object.assign(r,{sf:0,fallen:false,vol:100,o2:100,hr:1.2,tone:1,par:false,state:'Conscious'});healParts(r)}
+function heal(r){resetGoreFor(r);for(const w of r.wounds)w.p.mesh.remove(w.mk);r.wounds=[];for(const o of r.organs){o.hp=100;o.w=null}Object.assign(r,{sf:0,fallen:false,vol:100,o2:100,hr:1.2,tone:1,par:false,state:'Conscious'});healParts(r)}
 function addWound(r,p,lp,ld,o){let w=o.w;if(w){w.rate=Math.min(w.rate*1.3,o.leak*2);return}
  w={p,lp,ld,rate:o.leak,art:!!o.art,clot:o.art?.01:(o.leak<1?.06:.03),acc:0,froth:/lung/.test(o.n)};o.w=w;r.wounds.push(w);
  if(r.wounds.length>24){const old=r.wounds.shift();old.p.mesh.remove(old.mk)}
@@ -250,8 +251,8 @@ function shot(p,pt,d,w){
  if(head)p.body.applyTorqueImpulse({x:(Math.random()-.5)*k*.012,y:(Math.random()-.5)*k*.012,z:(Math.random()-.5)*k*.012},true);   // head whip
  select(r);
  if(r.tone>.4){const c=r.parts.chest.body;c.applyTorqueImpulse({x:(Math.random()-.5)*2,y:(Math.random()-.5)*2,z:(Math.random()-.5)*2},true)}
- hurtPart(p,pd,'hit');startReact(r,head?'head':/thigh|shin|foot/.test(p.n)?'buckle':'clutch',head?1.1:.9,1);
- r.stun=Math.max(r.stun,head?Math.min(3,.8+raw/120):/thigh|shin|foot/.test(p.n)?Math.min(2.5,.8+raw/200):(p.n=='chest'||p.n=='pelvis')?Math.min(1.5,.4+raw/300):0);
+ hurtPart(p,pd,'hit');if(!r.npc)startReact(r,head?'head':/thigh|shin|foot/.test(p.n)?'buckle':'clutch',head?1.1:.9,1);else{r.npc.panic=Math.max(r.npc.panic,.55);r.npc.dsp=Math.max(r.npc.dsp,2.2)}
+ r.stun=Math.max(r.stun,r.npc?Math.min(.28,raw/700):head?Math.min(3,.8+raw/120):/thigh|shin|foot/.test(p.n)?Math.min(2.5,.8+raw/200):(p.n=='chest'||p.n=='pelvis')?Math.min(1.5,.4+raw/300):0);
  if(hel&&hel.hp<=0)popHelmet(r,d,3+k*.05);
  const lp=pt.clone().sub(T0).applyQuaternion(Qv),ld=d.clone().negate().applyQuaternion(Qv);let hit=false;
  if(!hel)addMark(p,lp,ld,head);
@@ -300,8 +301,8 @@ const WP=[{n:'Draco',rate:11,auto:1,mag:30,rl:2,dmg:75,imp:32,spr:.018,pen:1,rec
  {n:'Revolver',rate:1.8,auto:0,mag:6,rl:2.2,dmg:125,imp:58,spr:.008,pen:1,rec:.04,len:.26,col:0x666666,ln:.95}];
 WP.forEach(w=>{w.ammo=w.mag;w.dmg0=w.dmg});
 let cur=-1,cd=0,reload=0,ri=0,firing=false,zoom=false;
-scene.add(camera);const gun=new THREE.Group(),gunScene=new THREE.Scene(),gcam=new THREE.PerspectiveCamera(65,1,.02,10);gunScene.add(gun,new THREE.HemisphereLight(0xffffff,0x555566,1.6));{const dl=new THREE.DirectionalLight(0xfff4e0,2.6);dl.position.set(1,2,1.5);gunScene.add(dl)}gun.position.set(.16,-.14,-.35);let gz=-.35,mf=null,mfT=0;
-const GC=new THREE.CylinderGeometry(1,1,1,20);
+scene.add(camera);const gun=new THREE.Group(),gunScene=new THREE.Scene(),gcam=new THREE.PerspectiveCamera(65,1,.02,10);gunScene.add(gun,new THREE.HemisphereLight(0xffffff,0x555566,1.6));{const dl=new THREE.DirectionalLight(0xfff4e0,2.6);dl.position.set(1,2,1.5);gunScene.add(dl)}gun.position.set(.16,-.14,-.35);let gz=-.35,mf=null,mfT=0,gunClock=0;
+const GC=new THREE.CylinderGeometry(1,1,1,20),GFC=new THREE.CapsuleGeometry(.5,.8,3,6);
 const gmat=(c,m,r)=>new THREE.MeshStandardMaterial({color:c,metalness:m,roughness:r});
 function buildGun(){gun.clear();mf=null;if(cur<0)return;const w=WP[cur];
  const blk=gmat(0x15161a,.85,.35),stl=gmat(0x5b5f66,.9,.28),pol=gmat(0x202226,.15,.75),wood=gmat(0x74462a,.05,.55),skin=gmat(0xc99a78,0,.8),sleeve=gmat(0x2a3140,0,.9),glass=gmat(0x1a3a55,.3,.1);
@@ -334,6 +335,36 @@ function buildGun(){gun.clear();mf=null;if(cur<0)return;const w=WP[cur];
   bx(stl,.03,.05,.1,0,0,-.03);cy(stl,.026,.06,0,.005,-.09);for(let i=0;i<6;i++){const a=i*Math.PI/3;cy(blk,.007,.062,Math.cos(a)*.019,.005+Math.sin(a)*.019,-.09)}
   cy(stl,.012,.17,0,.022,-.24);bx(stl,.008,.006,.17,0,.036,-.24);cy(stl,.01,.12,0,-.005,-.22);cy(blk,.005,.1,0,-.002,-.215);bx(blk,.006,.012,.01,0,.04,-.32);bx(blk,.018,.008,.012,0,.03,.01);
   bx(blk,.01,.03,.014,0,.03,.03,.5);bx(blk,.01,.006,.06,0,-.035,-.02);bx(wood,.032,.1,.055,0,-.08,.035,-.25);rightHand();muzY=.022;muzZ=-.33}
+ // Fine procedural detailing: sights, rails, slide cuts, fasteners and textured grips.
+ const screw=(x,y,z)=>{add(G.sph,stl,.006,.006,.003,x,y,z);add(G.box,blk,.006,.0015,.001,x,y,z+.002)};
+ const rail=(z0,count,step)=>{for(let i=0;i<count;i++)bx(stl,.028,.006,.012,0,.036,z0+i*step)};
+ const finger=(x,y,z,rz=0)=>add(GFC,skin,.018,.052,.018,x,y,z,0,0,rz);
+ // Finger silhouettes make the first-person grip read as a hand rather than a block.
+ for(let i=0;i<4;i++)finger(.015+(i-1.5)*.012,-.105,.045-i*.003,-.12);
+ if(cur===0){ // compact AK-pattern Draco: handguard vents, top rail, gas block and muzzle brake
+  rail(-.34,9,.026);
+  for(let i=0;i<5;i++){bx(blk,.003,.012,.018,.024,-.002,-.23+i*.035);bx(blk,.003,.012,.018,-.024,-.002,-.23+i*.035)}
+  cy(stl,.011,.035,0,.012,-.49);cy(blk,.016,.045,0,.012,-.55);
+  for(let i=0;i<4;i++)bx(stl,.035,.008,.008,0,.052,-.035-i*.025);
+  bx(stl,.045,.012,.035,0,.055,-.02);screw(.022,.025,-.12);screw(-.022,.025,-.12);
+ }else if(cur===1||cur===2){ // Glock slide serrations, raised sights, trigger guard and grip panels
+  for(let side of[-1,1])for(let i=0;i<6;i++)bx(stl,.0025,.019,.004,side*.016,.012,-.025-i*.014,0,0,.12);
+  bx(blk,.012,.009,.012,0,.036,-.19);bx(stl,.012,.01,.012,0,.037,-.015);
+  add(G.tor,blk,.035,.028,.012,0,-.047,-.035,Math.PI/2,0,0);
+  for(let i=0;i<5;i++)bx(stl,.031,.003,.006,0,-.105+i*.012,.014,-.2);
+  screw(.016,-.07,.005);screw(-.016,-.07,.005);
+  if(cur===1){bx(stl,.035,.008,.012,0,-.19,.048);for(let i=0;i<5;i++)bx(stl,.034,.003,.008,0,-.165+i*.012,.045,-.2)}
+ }else if(cur===3){ // precision rifle: Picatinny rail, scope rings, bolt, bipod and barrel fluting
+  rail(-.28,13,.024);
+  for(let side of[-1,1]){bx(stl,.008,.012,.05,side*.026,.07,-.1);bx(blk,.008,.012,.05,side*.026,.07,.02)}
+  cy(stl,.014,.045,.035,.015,-.14);add(G.sph,stl,.018,.018,.018,.058,.015,-.14);
+  for(let i=0;i<5;i++)bx(stl,.002,.008,.05,.021,.012,-.42-i*.045);
+  bx(blk,.012,.012,.09,-.025,-.09,-.37,-.25);bx(blk,.012,.012,.09,.025,-.09,-.37,.25);
+ }else{ // revolver: cylinder flutes, ejector rod and rear notch
+  for(let i=0;i<6;i++){const a=i*Math.PI/3;const x=Math.cos(a)*.027,y=.005+Math.sin(a)*.027;add(G.sph,blk,.005,.005,.03,x,y,-.09)}
+  bx(stl,.006,.008,.11,.018,.026,-.23);bx(stl,.006,.008,.11,-.018,.026,-.23);
+  bx(blk,.025,.012,.012,0,.04,.015);screw(.017,-.07,.06);screw(-.017,-.07,.06);
+ }
  mf=new THREE.Group();const fm=new THREE.MeshBasicMaterial({color:0xffd27a,transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
  const f1=new THREE.Mesh(new THREE.PlaneGeometry(.14,.14),fm),f2=f1.clone();f2.rotation.y=Math.PI/2;mf.add(f1,f2,new THREE.Mesh(G.sph,fm));mf.children[2].scale.setScalar(.025);
  mf.position.set(0,muzY,muzZ-.03);mf.visible=false;gun.add(mf)}
@@ -346,7 +377,7 @@ function fire(w){
  const o=camera.position.clone(),mz=camera.localToWorld(new THREE.Vector3(.16,-.1,-.7));let ex,end=o.clone().addScaledVector(d,80);
  noise(o.x,o.z,w.ln,55);gunFlinch(o);   // gunshot is loud: crowd and dummies react
  for(let k=0;k<=w.pen;k++){const h=world.castRay(new RAPIER.Ray(o,d),150,true,undefined,undefined,ex),ht=h?(h.timeOfImpact??h.toi):150,nh=npcHit(o,d,ht);
-  if(nh){const pt=nh.pt;end=pt;const r=npcToRagdoll(nh.n,false),p=nearestPart(r,pt);select(r);noise(pt.x,pt.z,.8,16);
+  if(nh){const pt=nh.pt;end=pt;const n=nh.n,r=n.r&&ragdolls.includes(n.r)?n.r:npcToRagdoll(n,false),p=nearestPart(r,pt);select(r);noise(pt.x,pt.z,.8,16);
    if(S.frozen||S.paused)pend.push([p,pt.clone(),d.clone(),w]);else shot(p,pt,d,w);o.copy(pt).addScaledVector(d,.35);continue}
   if(!h)break;
   const pt=o.clone().addScaledVector(d,ht);end=pt;const b=h.collider.parent(),p=b&&bodyMap.get(b.handle);
@@ -357,7 +388,7 @@ function fire(w){
 function tryFire(){if(cur<0||cd>0||reload>0)return;const w=WP[cur];if(w.ammo<=0){reload=w.rl;ri=cur;return}
  fire(w);w.ammo--;cd=1/w.rate;if(w.ammo<=0){reload=w.rl;ri=cur}}
 function gunTick(dt){for(const d of drums){const t=d.b.translation(),q=d.b.rotation();d.m.position.set(t.x,t.y,t.z);d.m.quaternion.set(q.x,q.y,q.z,q.w)}flash.intensity*=Math.pow(.02,dt);mfT-=dt;if(mf&&mfT<=0)mf.visible=false;gun.rotation.x*=Math.pow(.0005,dt);cd-=dt;if(reload>0){reload-=dt;if(reload<=0)WP[ri].ammo=WP[ri].mag}
- if(firing&&cur>=0&&WP[cur].auto)tryFire();gun.position.z+=(gz-gun.position.z)*Math.min(1,dt*12);
+ if(firing&&cur>=0&&WP[cur].auto)tryFire();gunClock+=dt;gun.position.z+=(gz-gun.position.z)*Math.min(1,dt*12);gun.position.y+=(-.14+Math.sin(gunClock*2.1)*.0025-gun.position.y)*Math.min(1,dt*5);gun.rotation.z+=(Math.sin(gunClock*1.4)*.003-gun.rotation.z)*Math.min(1,dt*4);
  for(const l of trs)if(l.visible){l.life-=dt;l.material.opacity=Math.max(0,l.life/.07);if(l.life<=0)l.visible=false}}
 function hudX(){let t=`${S.frozen?' · TIME FROZEN':''}${S.gravity==-9.81?'':' · g='+S.gravity}\n${cur<0?'Hand (grab)':WP[cur].n+' '+WP[cur].ammo+'/'+WP[cur].mag+(reload>0?' · reloading':'')}`;
  if(sel&&showV)t+=`\nSelected: ${sel.state} · blood ${Math.round(sel.vol)}% · HR ${Math.round(sel.hr*60)} · O2 ${Math.round(sel.o2)}% · wounds ${sel.wounds.length} · ${sel.fallen?'down':sel.sf>.5?'standing':'unsteady'}\nDamaged: ${sel.organs.filter(o=>o.hp<100).map(o=>o.n+' '+Math.max(0,Math.round(o.hp))+'%').join(', ')||'none'}`+partsLine(sel);return t}
@@ -424,14 +455,49 @@ function addMark(p,lp,ld,head){const q=new THREE.Quaternion().setFromUnitVectors
  const mk=(mat,s)=>{const m=new THREE.Mesh(G.sph,mat);m.position.copy(lp);m.quaternion.copy(q);m.scale.set(s,s,s*.3);m.renderOrder=2;m.visible=!S.xray;p.mesh.add(m);p.marks.push(m)};
  if(head){mk(ringM,.034);mk(holeM,.016)}else mk(markM,.018);
  while(p.marks.length>30)p.mesh.remove(p.marks.shift())}
+// Small physical-looking debris and an ejected brain use lightweight scene-space motion.
+// They are visual-only props, so they do not add extra Rapier colliders to the simulation.
+const looseGore=[];
+function tossGore(mesh,pos,vel,life=7,spin=8,owner=null){mesh.position.copy(pos);mesh.quaternion.setFromEuler(new THREE.Euler(Math.random()*6,Math.random()*6,Math.random()*6));scene.add(mesh);looseGore.push({mesh,v:vel.clone(),spin,life,owner})}
+function ejectBrain(r){if(r.brainEjected||!r.org.brain)return;const og=r.org.brain,m=og.mesh,p=r.parts.head;
+ const pos=new THREE.Vector3();m.getWorldPosition(pos);const q=new THREE.Quaternion();m.getWorldQuaternion(q);m.parent.remove(m);scene.add(m);m.position.copy(pos);m.quaternion.copy(q);m.visible=!S.xray;
+ const v=p.body.linvel();tossGore(m,pos,new THREE.Vector3(v.x*.55+(Math.random()-.5)*1.8,Math.max(1.2,v.y*.45+1.4),v.z*.55+(Math.random()-.5)*1.8),9,5,r);r.brainEjected=true;
+ for(let i=0;i<8;i++){const chip=new THREE.Mesh(G.sph,boneChipM);chip.scale.set(.012+rnd(0,.012),.009+rnd(0,.01),.014+rnd(0,.012));const a=Math.random()*6.283,s=rnd(1.5,4.5);tossGore(chip,pos,new THREE.Vector3(Math.cos(a)*s,rnd(1,4),Math.sin(a)*s),rnd(3.5,7),rnd(4,12),r)}
+ if(S.fx&&S.blood)bleed(pos.x,pos.y,pos.z,new THREE.Vector3(0,1,0),2.2,1.5,20,[.85,.18,.24],v);
+}
+function resetGoreFor(r){for(let i=looseGore.length-1;i>=0;i--){const q=looseGore[i];if(q.owner===r){scene.remove(q.mesh);if(q.mesh!==r.org.brain?.mesh)q.mesh.geometry.dispose();looseGore.splice(i,1)}}
+ if(r.brainEjected&&r.org.brain){const m=r.org.brain.mesh;scene.remove(m);r.parts.head.g.add(m);m.position.copy(r.org.brain.lp);m.quaternion.identity();m.scale.setScalar(r.org.brain.r);m.visible=S.xray;r.brainEjected=false}}
+function updLooseGore(dt){for(let i=looseGore.length-1;i>=0;i--){const q=looseGore[i],m=q.mesh;q.life-=dt;if(q.life<=0||m.position.y<-.3){scene.remove(m);if(q.owner&&q.owner.org.brain?.mesh===m)q.owner.brainEjected=true;else m.geometry.dispose();looseGore.splice(i,1);continue}
+ q.v.y-=9.8*dt;q.v.multiplyScalar(Math.exp(-.28*dt));m.position.addScaledVector(q.v,dt);m.rotation.x+=q.spin*dt;m.rotation.y+=q.spin*.73*dt;
+ if(m.position.y<.018){m.position.y=.018;q.v.y=Math.abs(q.v.y)*.22;q.v.x*=.62;q.v.z*=.62;q.spin*=.65}}
+}
+
+// Physically detach a destroyed limb segment by removing its proximal Rapier joint.
+// The detached segment (and any distal segments still joined to it) remain simulated bodies.
+function severLimb(p){
+ const r=p.r,n=p.n;if(!/^(uarm|farm|hand|thigh|shin|foot)[LR]$/.test(n)||p.severed)return;
+ const joint=r.joints.find(j=>j.b===p&&!j.severed);if(!joint)return;
+ try{world.removeImpulseJoint(joint.jt,true)}catch(e){return}
+ joint.severed=true;p.severed=true;p.lf=.02;p.body.wakeUp();
+ const t=p.body.translation(),v=p.body.linvel(),pos=new THREE.Vector3(t.x,t.y,t.z);
+ // A short burst at the joint line makes the separation readable without adding heavy physics debris.
+ if(S.fx){emit(pos.x,pos.y,pos.z,24,.9,.12,.16,4);bleed(pos.x,pos.y,pos.z,new THREE.Vector3(0,1,0),2.8,1.3,22,BL,v)}
+ const cap=new THREE.Mesh(G.sph,fleshM);cap.scale.set(.045,.035,.045);cap.position.copy(pos);cap.renderOrder=3;scene.add(cap);
+ const bv=new THREE.Vector3(v.x+(Math.random()-.5)*1.8,Math.max(.5,v.y+1.1),v.z+(Math.random()-.5)*1.8);tossGore(cap,pos,bv,5,7,r);
+ const kick=1.8*p.body.mass();p.body.applyImpulse({x:(Math.random()-.5)*kick,y:.8*kick,z:(Math.random()-.5)*kick},true);
+ if(r.npc){const npc=r.npc;npc.stumble=Math.max(npc.stumble,.35);npc.dsp=Math.max(npc.dsp,1.2);npc.panic=Math.max(npc.panic,.25)}
+}
 // apply health damage to one part (persistent until the ragdoll is reset)
 function hurtPart(p,amt,kind){if(!(amt>0))return;const was=p.broken;p.hp=Math.max(0,p.hp-amt);p.lf=p.hp<=0?.05:.25+.75*(p.hp/p.max);p.vd=1;p.flash=Math.min(1,p.flash+(kind=='hit'?.7:.35));
- if(p.hp<=0&&!was){p.broken=true;const t=p.body.translation(),h=p.n=='head',r=p.r;
+ if(p.hp<=0&&!was){p.broken=true;const t=p.body.translation(),h=p.n=='head',r=p.r;if(kind=='hit')severLimb(p);
   if(S.fx)emit(t.x,t.y,t.z,h?34:18,.92,.88,.78,h?4:2.5);
-  if(h){r.org.brain.hp-=45;r.stun=Math.max(r.stun,4)}else{r.stun=Math.max(r.stun,p.n=='neck'?3:1.4);if(/thigh|shin|foot/.test(p.n))startReact(r,'buckle',1.5,1)}}}
+  if(h){r.org.brain.hp-=45;r.stun=Math.max(r.stun,4);ejectBrain(r)}else{r.stun=Math.max(r.stun,p.n=='neck'?3:1.4);if(/thigh|shin|foot/.test(p.n))startReact(r,'buckle',1.5,1);if(S.fx){const pos=new THREE.Vector3(t.x,t.y,t.z);for(let i=0;i<3;i++){const chip=new THREE.Mesh(G.sph,boneChipM);chip.scale.set(.012,.009,.02);tossGore(chip,pos,new THREE.Vector3((Math.random()-.5)*2,1+Math.random()*2,(Math.random()-.5)*2),4,7,r)}}}}}
 // collision-sensitive damage (falls, slams, thrown into walls)
 function collide(p,dv,t){const r=p.r,head=p.n=='head',amt=(dv-COLL_T)*3.2*S.collDmg*(head?1.5:1)*(r.npc?S.npcImpact:1);
- p.flash=Math.min(1,p.flash+dv/22);hurtPart(p,amt,'coll');
+ p.flash=Math.min(1,p.flash+dv/22);
+ // Living crowd characters stagger from hard impacts instead of behaving like rigid props.
+ if(r.npc&&dv>8){const n=r.npc;n.stumble=Math.max(n.stumble,Math.min(1.9,.28+(dv-8)*.055));n.stumbleSide=(Math.random()<.5?-1:1);n.stumbleSeed=Math.random()*6.28;n.dsp=Math.min(n.dsp,Math.max(.25,n.sp*.48));r.stun=Math.max(r.stun,Math.min(1.25,.25+(dv-8)*.045));startReact(r,'buckle',.45+Math.min(.7,dv*.018),.85)}
+ hurtPart(p,amt,'coll');
  if(amt>8)for(const o of r.organs)if(o.p===p&&o.mesh)o.hp-=amt*.35;
  if(S.fx){if(head)emit(t.x,t.y,t.z,Math.min(24,Math.floor(dv*1.2)),1,.95,.55,dv*.35);else emit(t.x,t.y,t.z,Math.min(14,Math.floor(dv)),.6,.5,.4,dv*.2)}
  if(head&&r.helmet&&r.helmet.on){r.helmet.hp-=amt*.6;p.vd=1;if(r.helmet.hp<=0||dv>18)popHelmet(r,null,2)}
@@ -460,7 +526,7 @@ function stowHelmet(r,on){const h=r.helmet;if(!h)return;
  r.parts.head.mesh.add(h.g);h.g.position.set(0,0,0);h.g.rotation.set(0,0,0);h.g.quaternion.identity();h.hp=h.max;h.on=!!on;h.g.visible=h.on&&!S.xray;r.parts.head.vd=1}
 function toggleHelmet(r){if(!r||!r.helmet)return;if(r.helmet.on)popHelmet(r,null,1.5);else stowHelmet(r,true)}
 function toggleHeadDmg(r){if(!r)return;r.hForce=!r.hForce;r.parts.head.vd=1;visPart(r.parts.head)}
-function healParts(r){for(const p of r.list){p.hp=p.max;p.lf=1;p.broken=false;p.flash=0;p.vd=1;for(const m of p.marks)p.mesh.remove(m);p.marks.length=0}
+function healParts(r){for(const j of r.joints)if(j.severed){let jd;if(j.jd=='s')jd=RAPIER.JointData.spherical(j.la,j.lb);else{jd=RAPIER.JointData.revolute(j.la,j.lb,{x:1,y:0,z:0});jd.limitsEnabled=true;jd.limits=j.limits||[-2.4,2.4]}j.jt=world.createImpulseJoint(jd,j.a.body,j.b.body,true);if(j.jt.setContactsEnabled)j.jt.setContactsEnabled(false);j.severed=false}for(const p of r.list){p.hp=p.max;p.lf=1;p.broken=false;p.severed=false;p.flash=0;p.vd=1;for(const m of p.marks)p.mesh.remove(m);p.marks.length=0}
  r.stun=0;r.hForce=false;r.rt=0;r.rw=0;r.collapsed=false;stowHelmet(r,S.helmet)}
 function lift(r,dy){for(const p of r.list){const t=p.body.translation(),v=p.body.linvel();p.body.setTranslation({x:t.x,y:t.y+dy,z:t.z},true);p.body.setLinvel({x:v.x,y:Math.max(0,v.y),z:v.z},true);p.noColl=.4;p.pv.set(v.x,Math.max(0,v.y),v.z)}}
 function partsLine(r){const d=r.list.filter(p=>p.hp<p.max).map(p=>p.n+' '+Math.round(100*p.hp/p.max)+'%'),h=r.helmet;
@@ -521,7 +587,7 @@ function makeNpc(x,z){const g=new THREE.Group(),sh=pick(SHM),pn=pick(PNM),hm=pic
  xb(aL,G.cyl,0,-.24,0,.018,.5,.018);xb(aR,G.cyl,0,-.24,0,.018,.5,.018);xb(lL,G.cyl,0,-.44,0,.022,.88,.022);xb(lR,G.cyl,0,-.44,0,.022,.88,.022);
  const a=Math.random()*6.283;
  const n={g,body,head,aL,aR,lL,lR,hm,sh,ms,xs,x,z,h:Math.random()*6.283,vx:0,vz:0,sp:0,dx:Math.sin(a),dz:Math.cos(a),dsp:0,panic:0,fear:rnd(.7,1.4),spd:rnd(.85,1.2),react:'run',pan:false,rt:0,zt:0,zs:0,
-  fx:Math.sin(a),fz:Math.cos(a),dT:99,tx:x,tz:z,wp:null,tt:0,idle:rnd(0,3),nt:Math.random()*.3,ta:0,sx:x,sz:z,sk:0,stuck:0,ph:rnd(0,6.28),off:rnd(0,6.28),cr:0,st:'idle',shd:true,d2:0};
+  fx:Math.sin(a),fz:Math.cos(a),dT:99,tx:x,tz:z,wp:null,tt:0,idle:rnd(0,3),nt:Math.random()*.3,ta:0,sx:x,sz:z,sk:0,stuck:0,ph:rnd(0,6.28),off:rnd(0,6.28),cr:0,st:'idle',shd:true,d2:0,stumble:0,stumbleSide:1,stumbleSeed:Math.random()*6.28};
  g.position.set(x,0,z);scene.add(g);
  // Every crowd character now owns a real articulated Rapier ragdoll from spawn.
  // Keep the existing crowd brain for navigation, but let physics own its position.
@@ -569,16 +635,15 @@ function think(n,dt){const px=n.x,pz=n.z;n.dT+=dt;
  const fl=Math.hypot(n.fx,n.fz)||1;n.fx/=fl;n.fz/=fl;
  if(n.dT>2.2&&hot==0)n.panic=Math.max(0,n.panic-dt*(.07+.06*(1-n.panic)));      // gradual calming
  const p=n.panic;
- if(p>=.4&&!n.pan){n.pan=true;const r=Math.random();n.react=r<.5?'run':r<.68?'zigzag':r<.82?'freeze':'crouch';
-  if(n.react=='freeze')n.rt=rnd(.8,2.2);else if(n.react=='crouch')n.rt=rnd(1.5,3.5)}
+ if(p>=.4&&!n.pan){n.pan=true;n.react='run';n.rt=0;n.zt=0}
  else if(p<.12&&n.pan){n.pan=false;n.react='run';n.rt=0}
- if(n.rt>0){n.rt-=dt;if(p>.85)n.rt-=dt}
+ // Fear is a flight response: no freeze/cower branch; NPCs keep moving away from the threat.
+ if(n.rt>0)n.rt=Math.max(0,n.rt-dt);
  let bx=0,bz=0,sp=0,st='walk';const base=1.25*n.spd*S.npcSpeed;
  if(p>=.4){
-  if(n.rt>0){st=n.react=='crouch'?'crouch':'freeze'}
-  else{st=p>=.75?'terror':'run';let fx=n.fx,fz=n.fz;
-   if(n.react=='zigzag'||p>=.75){n.zt-=dt;if(n.zt<=0){n.zt=rnd(.5,1.3);n.zs=(Math.random()<.5?-1:1)*rnd(.3,.9)}const c=Math.cos(n.zs),s=Math.sin(n.zs),tx=fx*c-fz*s,tz=fx*s+fz*c;fx=tx;fz=tz}
-   bx=fx;bz=fz;sp=(3.3+p*2)*n.spd*S.npcSpeed}
+  {st=p>=.75?'terror':'run';let fx=n.fx,fz=n.fz;
+   if(p>=.75){n.zt-=dt;if(n.zt<=0){n.zt=rnd(.5,1.3);n.zs=(Math.random()<.5?-1:1)*rnd(.3,.9)}const c=Math.cos(n.zs),s=Math.sin(n.zs),tx=fx*c-fz*s,tz=fx*s+fz*c;fx=tx;fz=tz}
+   bx=fx;bz=fz;sp=(4.2+p*2.4)*n.spd*S.npcSpeed}
  }else if(p>=.12){st='alert';bx=n.fx;bz=n.fz;sp=base*(.8+(p-.12)*3)}
  else{
   if(n.idle>0){n.idle-=dt;st='idle'}
@@ -588,7 +653,7 @@ function think(n,dt){const px=n.x,pz=n.z;n.dT+=dt;
    if(n.tt<=0)pickTarget(n)}}
  // steering: obstacles, walls, drums, ragdolls, neighbours
  AX=sx;AZ=sz;
- if(st!='freeze'&&st!='crouch'&&st!='idle'){
+ if(st!='idle'){
   const L=1+sp*.35;
   for(const o of OBST){if(Math.abs(o.x-px)>o.R+L+1.5||Math.abs(o.z-pz)>o.R+L+1.5)continue;avoidBox(o,px+bx*L,pz+bz*L,1,bx,bz);avoidBox(o,px,pz,1,bx,bz)}
   for(const d of drums){const q=d.m.position;if(Math.abs(q.x-px)<3&&Math.abs(q.z-pz)<3)avoidC(q.x,q.z,1.1,px,pz,bx,bz)}
@@ -662,31 +727,61 @@ function updCrowd(dt){
 // crowd AI steers the pelvis while gait muscles add alternating limb motion.
 function driveNpc(n,dt){
  const r=n.r;if(!r||!ragdolls.includes(r))return;
+ // Keep wounded NPCs under muscle control until they actually die; then hand the body to full ragdoll physics.
+ if(r.state=='DEAD'||r.tone<.15){npcToRagdoll(n,true);return}
  const pelvis=r.parts.pelvis.body,chest=r.parts.chest.body;
  const pv=pelvis.linvel(),mass=pelvis.mass(),speed=Math.hypot(n.vx,n.vz);
- const tx=n.vx, tz=n.vz;
- let ax=(tx-pv.x)*7.5*S.npcBalance,az=(tz-pv.z)*7.5*S.npcBalance;
- const al=Math.hypot(ax,az);if(al>32) {ax*=32/al;az*=32/al}
+ const stumble=Math.max(0,n.stumble||0),st=Math.min(1,stumble/1.1);
+ n.stumble=Math.max(0,stumble-dt);
+ // Motor strength dips briefly after a collision, then ramps back up as the character catches themself.
+ const balance=S.npcBalance*(1-.22*st),muscle=S.npcMuscle*(1-.28*st);
+ let ax=(n.vx-pv.x)*10.5*balance,az=(n.vz-pv.z)*10.5*balance;
+ const al=Math.hypot(ax,az);if(al>32){ax*=32/al;az*=32/al}
  pelvis.addForce({x:ax*mass,y:0,z:az*mass},true);
  // Turn the articulated body toward its travel direction without snapping the pose.
  if(speed>.18){
   const target=Math.atan2(n.dx,n.dz),q=pelvis.rotation();
   const yawNow=Math.atan2(2*(q.w*q.y+q.x*q.z),1-2*(q.y*q.y+q.z*q.z));
   const err=wrapA(target-yawNow),av=pelvis.angvel();
-  pelvis.addTorque({x:0,y:(err*10-av.y*2.8)*mass*.12,z:0},true);
+  pelvis.addTorque({x:0,y:(err*15-av.y*3.8)*mass*.16,z:0},true);
  }
- // Alternating hip/arm swing gives the controller a gait target while joints stay physical.
+ // Read actual torso lean; a counter-torque and a recovery step make balance reactive, not scripted.
+ const cq=chest.rotation(),up=new THREE.Vector3(0,1,0).applyQuaternion(new THREE.Quaternion(cq.x,cq.y,cq.z,cq.w));
+ const leanErr=new THREE.Vector3(up.z,0,-up.x),leanAmt=Math.min(1,leanErr.length());
+ const cav=chest.angvel();
+ if(leanAmt>.035){leanErr.multiplyScalar((26+leanAmt*48)*balance*mass*.045);chest.addTorque({x:leanErr.x-cav.x*mass*.035,y:-cav.y*mass*.018,z:leanErr.z-cav.z*mass*.035},true)}
+ // Alternating hip, knee, ankle and arm muscles. Opposite arm swing counter-rotates the torso.
  n.ph+=dt*(2.2+Math.min(5,speed)*1.5);
- const gait=Math.min(1,speed/1.4)*S.npcMuscle;
- const swing=Math.sin(n.ph)*gait*2.2*mass*.035;
- r.parts.thighL.body.addTorque({x:swing,y:0,z:0},true);
- r.parts.thighR.body.addTorque({x:-swing,y:0,z:0},true);
- r.parts.uarmL.body.addTorque({x:-swing*.55,y:0,z:0},true);
- r.parts.uarmR.body.addTorque({x:swing*.55,y:0,z:0},true);
- const knee=Math.max(0,Math.sin(n.ph))*gait*mass*.018;
- r.parts.shinL.body.addTorque({x:knee,y:0,z:0},true);
- r.parts.shinR.body.addTorque({x:Math.max(0,-Math.sin(n.ph))*gait*mass*.018,y:0,z:0},true);
- // If balance is lost, let the shared active-ragdoll controller attempt recovery.
+ const wave=Math.sin(n.ph),gait=Math.min(1,speed/1.05)*muscle,runBoost=n.panic>.4?1.35:1;
+ const recovery=leanAmt>.22?Math.min(1,(leanAmt-.22)*2.2):0;
+ const swing=wave*gait*2.8*runBoost*mass*.04;
+ const stepBoost=(recovery+st*.55)*mass*.06;
+ r.parts.thighL.body.addTorque({x:swing+stepBoost*Math.max(0,-wave),y:0,z:0},true);
+ r.parts.thighR.body.addTorque({x:-swing+stepBoost*Math.max(0,wave),y:0,z:0},true);
+ r.parts.uarmL.body.addTorque({x:-swing*.58,y:0,z:0},true);
+ r.parts.uarmR.body.addTorque({x:swing*.58,y:0,z:0},true);
+ const knee=Math.max(0,wave)*gait*runBoost*mass*.026;
+ r.parts.shinL.body.addTorque({x:knee+stepBoost*.35*Math.max(0,-wave),y:0,z:0},true);
+ r.parts.shinR.body.addTorque({x:Math.max(0,-wave)*gait*runBoost*mass*.026+stepBoost*.35*Math.max(0,wave),y:0,z:0},true);
+ // Swing the lower legs and ankles through a fuller stride; shoulders counter-rotate to stabilize the head.
+ r.parts.footL.body.addTorque({x:-Math.max(0,wave)*gait*mass*.012,y:0,z:0},true);
+ r.parts.footR.body.addTorque({x:-Math.max(0,-wave)*gait*mass*.012,y:0,z:0},true);
+ r.parts.farmL.body.addTorque({x:swing*.22,y:0,z:0},true);r.parts.farmR.body.addTorque({x:-swing*.22,y:0,z:0},true);
+ const hq=r.parts.head.body.rotation(),hav=r.parts.head.body.angvel();r.parts.head.body.addTorque({x:-hq.x*mass*.9-hav.x*mass*.12,y:-hav.y*mass*.08,z:-hq.z*mass*.9-hav.z*mass*.12},true);
+ // A stumble produces a delayed side-step and arm windmill, then active balance takes over.
+ if(st>.02){const phase=n.ph*2.1+(n.stumbleSeed||0),side=(n.stumbleSide||1);
+  const kick=Math.sin(phase)*st*mass*.09;
+  r.parts.thighL.body.addTorque({x:0,y:0,z:side*kick},true);
+  r.parts.thighR.body.addTorque({x:0,y:0,z:-side*kick*.7},true);
+  r.parts.uarmL.body.addTorque({x:0,y:0,z:-side*kick*1.5},true);
+  r.parts.uarmR.body.addTorque({x:0,y:0,z:side*kick*1.5},true);
+  pelvis.addForce({x:side*Math.cos(phase)*st*mass*1.8,y:0,z:-Math.sin(phase)*st*mass*.8},true);
+ }
+ // Foot placement pushes the support base back under the pelvis while the body is moving.
+ const fl=r.parts.footL.body.translation(),fr=r.parts.footR.body.translation(),pt=pelvis.translation();
+ const midX=(fl.x+fr.x)*.5,midZ=(fl.z+fr.z)*.5;
+ const support=Math.min(1,leanAmt*.9+Math.min(.5,speed*.08));
+ pelvis.addForce({x:Math.max(-18,Math.min(18,(midX-pt.x)*mass*5))*support,y:0,z:Math.max(-18,Math.min(18,(midZ-pt.z)*mass*5))*support},true);
  r.stun=Math.max(0,r.stun-dt*.35);
 }
 // ----- NPC <-> physics ragdoll bridge -----
@@ -737,8 +832,8 @@ function gunFlinch(o){for(const r of ragdolls){if(r.tone<.3||r.state=='DEAD')con
 
 
 // ---------- dynamic blood: droplets with gravity/drag, floor splatters, growing pools, exit wounds ----------
-const BM=700,Bx=new Float32Array(BM),By=new Float32Array(BM),Bz=new Float32Array(BM),Bvx=new Float32Array(BM),Bvy=new Float32Array(BM),Bvz=new Float32Array(BM),Bl=new Float32Array(BM),Bs=new Float32Array(BM),Bvis=new Uint8Array(BM);let bptr=0,decDirty=false;
-const bo=new THREE.Object3D(),DEC=500;let dptr=0;
+const BM=1050,Bx=new Float32Array(BM),By=new Float32Array(BM),Bz=new Float32Array(BM),Bvx=new Float32Array(BM),Bvy=new Float32Array(BM),Bvz=new Float32Array(BM),Bl=new Float32Array(BM),Bs=new Float32Array(BM),Bvis=new Uint8Array(BM);let bptr=0,decDirty=false;
+const bo=new THREE.Object3D(),DEC=700;let dptr=0;
 const bIM=new THREE.InstancedMesh(new THREE.SphereGeometry(1,5,4),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.2,metalness:.1}),BM);
 bIM.frustumCulled=false;bIM.instanceMatrix.setUsage(THREE.DynamicDrawUsage);bIM.setColorAt(0,new THREE.Color(1,1,1));scene.add(bIM);
 const dIM=new THREE.InstancedMesh(new THREE.CircleGeometry(1,9),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.9,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}),DEC);
@@ -749,7 +844,7 @@ const exitRimM=new THREE.MeshBasicMaterial({color:0x6a0f0f}),exitInM=new THREE.M
 function growPool(x,z,a){for(const p of POOLS){const dx=x-p.x,dz=z-p.z,rr=p.r*1.15+.05;if(dx*dx+dz*dz<rr*rr){p.a+=a;p.r=Math.min(1,Math.sqrt(p.a/Math.PI));p.m.scale.set(p.r*p.fx,p.r*p.fz,1);return}}
  const m=new THREE.Mesh(poolGeo,poolMat);m.rotation.x=-Math.PI/2;m.position.set(x,.007+(POOLS.length%5)*.0003,z);m.renderOrder=1;scene.add(m);
  const p={x,z,a:Math.max(a,.004),r:0,m,fx:.85+Math.random()*.35,fz:.85+Math.random()*.35};p.r=Math.sqrt(p.a/Math.PI);m.scale.set(p.r*p.fx,p.r*p.fz,1);POOLS.push(p);
- if(POOLS.length>40){const o=POOLS.shift();scene.remove(o.m)}}
+ if(POOLS.length>55){const o=POOLS.shift();scene.remove(o.m)}}
 function splat(i){const sp=Math.hypot(Bvx[i],Bvz[i]),x=Bx[i],z=Bz[i],r=Bs[i]*(1.4+Math.min(2.2,sp*.3));
  for(const p of POOLS){const dx=x-p.x,dz=z-p.z;if(dx*dx+dz*dz<p.r*p.r){growPool(x,z,Math.PI*r*r*.35);return}}
  const k=dptr=(dptr+1)%DEC;bo.position.set(x,.004+(k%7)*.0004,z);bo.rotation.set(-Math.PI/2,0,Math.atan2(-Bvz[i],Bvx[i]));bo.scale.set(r*(1+Math.min(3,sp*.5)),r,1);bo.updateMatrix();dIM.setMatrixAt(k,bo.matrix);
@@ -770,7 +865,7 @@ function updBlood(dt){let ch=false;const dr=Math.exp(-.5*dt);
   if(sp>.2){V.set(Bvx[i]/sp,Bvy[i]/sp,Bvz[i]/sp);bo.quaternion.setFromUnitVectors(Z0,V)}else bo.quaternion.identity();
   bo.scale.set(Bs[i],Bs[i],Bs[i]*(1+Math.min(3,sp*.3)));bo.updateMatrix();bIM.setMatrixAt(i,bo.matrix);Bvis[i]=1;ch=true}
  if(ch)bIM.instanceMatrix.needsUpdate=true;if(decDirty){dIM.instanceMatrix.needsUpdate=true;dIM.instanceColor.needsUpdate=true;decDirty=false}}
-function clearBlood(){Bl.fill(0);bo.scale.set(0,0,0);bo.updateMatrix();for(let i=0;i<BM;i++){bIM.setMatrixAt(i,bo.matrix);Bvis[i]=0}for(let i=0;i<DEC;i++)dIM.setMatrixAt(i,bo.matrix);
+function clearBlood(){for(const q of looseGore){scene.remove(q.mesh);if(q.mesh!==q.owner?.org.brain?.mesh)q.mesh.geometry.dispose()}looseGore.length=0;Bl.fill(0);bo.scale.set(0,0,0);bo.updateMatrix();for(let i=0;i<BM;i++){bIM.setMatrixAt(i,bo.matrix);Bvis[i]=0}for(let i=0;i<DEC;i++)dIM.setMatrixAt(i,bo.matrix);
  bIM.instanceMatrix.needsUpdate=dIM.instanceMatrix.needsUpdate=true;for(const p of POOLS)scene.remove(p.m);POOLS.length=0}
 // ----- exit wounds -----
 function insideP(p,l){const t=p.d[1],a=p.d[2];if(t=='s')return l.length()<a[0];if(t=='b')return Math.abs(l.x)<a[0]&&Math.abs(l.y)<a[1]&&Math.abs(l.z)<a[2];const dy=Math.max(Math.abs(l.y)-a[0],0);return Math.hypot(l.x,dy,l.z)<a[1]}
@@ -854,7 +949,7 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min((now-last)/10
  for(const h of looseH){const t=h.body.translation(),q=h.body.rotation();h.g.position.set(t.x,t.y,t.z);h.g.quaternion.set(q.x,q.y,q.z,q.w)}
  updVis(dt);
  if(S.debug){const b=world.debugRender();dbg.geometry.setAttribute('position',new THREE.BufferAttribute(b.vertices,3))}
- gunTick(dt);if(sdt>0){updParticles(sdt);updBlood(sdt)}
+ gunTick(dt);if(sdt>0){updParticles(sdt);updBlood(sdt);updLooseGore(sdt)}
  if(auto&&sel){const c=sel.parts.chest.body.translation();T.lerp(V.set(c.x,c.y,c.z),1-Math.exp(-6*dt));const cp=Math.cos(op);
   camera.position.lerp(V2.set(T.x+od*cp*Math.sin(oy),T.y+od*Math.sin(op),T.z+od*cp*Math.cos(oy)),1-Math.exp(-10*dt));camera.lookAt(T)}
  else{camera.rotation.set(pitch,yaw,0);const sp=(keys.ShiftLeft?(S.walk?6:9):3)*dt,d=dir(),rt=new THREE.Vector3().crossVectors(d,Yv).normalize();
